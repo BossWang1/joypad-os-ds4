@@ -393,15 +393,39 @@ static void wiimote_process_report(bthid_device_t* device, const uint8_t* data, 
     if (report_id == WII_REPORT_STATUS && len >= 4) {
         uint8_t lf_byte = data[3];
         uint8_t flags = lf_byte & 0x0F;  // Low nibble is flags
-        wii->extension_connected = (flags & 0x02) != 0;
+        bool ext_now = (flags & 0x02) != 0;
 
-        printf("[WIIMOTE] Status: LF=0x%02X flags=0x%X ext=%d\n", lf_byte, flags, wii->extension_connected);
+        printf("[WIIMOTE] Status: LF=0x%02X flags=0x%X ext=%d\n", lf_byte, flags, ext_now);
 
         if (wii->state == WII_STATE_WAIT_STATUS) {
+            wii->extension_connected = ext_now;
             if (wii->extension_connected) {
                 wii->state = WII_STATE_SEND_EXT_INIT1;
             } else {
                 wii->state = WII_STATE_SEND_REPORT_MODE;
+            }
+        }
+        // Hot-swap: detect extension change while in READY state
+        else if (wii->state == WII_STATE_READY) {
+            if (ext_now != wii->extension_connected) {
+                printf("[WIIMOTE] Extension %s - re-initializing\n", ext_now ? "connected" : "disconnected");
+                wii->extension_connected = ext_now;
+                if (ext_now) {
+                    // New extension connected - init it
+                    wii->ext_type = WII_EXT_NONE;
+                    wii->state = WII_STATE_SEND_EXT_INIT1;
+                } else {
+                    // Extension disconnected - clear type and reset analogs to center
+                    wii->ext_type = WII_EXT_NONE;
+                    wii->event.analog[ANALOG_X] = 128;
+                    wii->event.analog[ANALOG_Y] = 128;
+                    wii->event.analog[ANALOG_Z] = 128;
+                    wii->event.analog[ANALOG_RX] = 128;
+                    wii->event.analog[ANALOG_RZ] = 0;
+                    wii->event.analog[ANALOG_SLIDER] = 0;
+                    router_submit_input(&wii->event);  // Update output immediately
+                    wii->state = WII_STATE_SEND_REPORT_MODE;
+                }
             }
         }
     }
