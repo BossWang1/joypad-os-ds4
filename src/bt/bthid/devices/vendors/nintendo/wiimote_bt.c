@@ -71,7 +71,21 @@ typedef enum {
     WII_EXT_NUNCHUK,
     WII_EXT_CLASSIC,       // Classic Controller / Classic Controller Pro (has analog sticks)
     WII_EXT_CLASSIC_MINI,  // NES/SNES Classic Controller (digital only, no sticks)
+    WII_EXT_GUITAR,        // Guitar Hero guitar
 } wiimote_ext_type_t;
+
+// Guitar Hero button bits (bytes 4-5, active low)
+// Byte 4: BD=bit6, B-=bit4, B+=bit2
+// Byte 5: BO=bit7, BR=bit6, BY=bit3, BG=bit4, BB=bit5, BU=bit0
+#define GH_BTN_STRUM_DOWN   0x0040  // Byte 4 bit 6
+#define GH_BTN_MINUS        0x0010  // Byte 4 bit 4
+#define GH_BTN_PLUS         0x0004  // Byte 4 bit 2
+#define GH_BTN_STRUM_UP     0x0100  // Byte 5 bit 0
+#define GH_BTN_GREEN        0x1000  // Byte 5 bit 4
+#define GH_BTN_RED          0x4000  // Byte 5 bit 6
+#define GH_BTN_YELLOW       0x0800  // Byte 5 bit 3
+#define GH_BTN_BLUE         0x2000  // Byte 5 bit 5
+#define GH_BTN_ORANGE       0x8000  // Byte 5 bit 7
 
 // Report IDs
 #define WII_REPORT_STATUS       0x20
@@ -378,6 +392,39 @@ static void wiimote_process_report(bthid_device_t* device, const uint8_t* data, 
                     if (cc_buttons & WII_CC_BTN_LEFT)  buttons |= JP_BUTTON_DL;
                     if (cc_buttons & WII_CC_BTN_RIGHT) buttons |= JP_BUTTON_DR;
 
+                } else if (wii->ext_type == WII_EXT_GUITAR) {
+                    // Guitar Hero Guitar format (6 bytes):
+                    // Byte 0: bits 5:0 = Stick X (6-bit)
+                    // Byte 1: bits 5:0 = Stick Y (6-bit)
+                    // Byte 2: bits 4:0 = Touch bar
+                    // Byte 3: bits 4:0 = Whammy bar
+                    // Byte 4-5: Buttons (inverted)
+                    uint8_t stick_x = ext[0] & 0x3F;
+                    uint8_t stick_y = ext[1] & 0x3F;
+                    uint8_t whammy = ext[3] & 0x1F;
+
+                    // Scale 6-bit stick (0-63) to 8-bit (0-255)
+                    wii->event.analog[ANALOG_X] = (stick_x << 2) | (stick_x >> 4);
+                    wii->event.analog[ANALOG_Y] = 255 - ((stick_y << 2) | (stick_y >> 4));  // Invert Y
+                    // Scale 5-bit whammy (0-31) to 8-bit
+                    wii->event.analog[ANALOG_RZ] = (whammy << 3) | (whammy >> 2);
+
+                    // Buttons (inverted)
+                    uint16_t gh_buttons = ~((ext[4] << 0) | (ext[5] << 8));
+
+                    // Fret buttons -> face buttons + L1
+                    if (gh_buttons & GH_BTN_GREEN)      buttons |= JP_BUTTON_B1;  // Green = B1
+                    if (gh_buttons & GH_BTN_RED)        buttons |= JP_BUTTON_B2;  // Red = B2
+                    if (gh_buttons & GH_BTN_YELLOW)     buttons |= JP_BUTTON_B4;  // Yellow = B4
+                    if (gh_buttons & GH_BTN_BLUE)       buttons |= JP_BUTTON_B3;  // Blue = B3
+                    if (gh_buttons & GH_BTN_ORANGE)     buttons |= JP_BUTTON_L1;  // Orange = L1
+                    // Strum bar -> D-pad
+                    if (gh_buttons & GH_BTN_STRUM_UP)   buttons |= JP_BUTTON_DU;
+                    if (gh_buttons & GH_BTN_STRUM_DOWN) buttons |= JP_BUTTON_DD;
+                    // System buttons
+                    if (gh_buttons & GH_BTN_PLUS)       buttons |= JP_BUTTON_S2;  // + = Start
+                    if (gh_buttons & GH_BTN_MINUS)      buttons |= JP_BUTTON_S1;  // - = Select
+
                 } else if (wii->extension_connected) {
                     // Debug: unknown extension type
                     static uint32_t last_ext_debug = 0;
@@ -500,14 +547,18 @@ static void wiimote_process_report(bthid_device_t* device, const uint8_t* data, 
                             wii->ext_type = WII_EXT_CLASSIC;
                         }
                     }
+                    else if (data[10] == 0x01 && data[11] == 0x03) {
+                        printf("[WIIMOTE] Guitar Hero Guitar detected!\n");
+                        wii->ext_type = WII_EXT_GUITAR;
+                    }
                     else if (data[10] == 0x01 && data[11] == 0x20) {
                         printf("[WIIMOTE] Wii U Pro extension detected\n");
                         // Don't set ext_type, this is handled by wii_u_pro driver
                     }
                     else {
-                        printf("[WIIMOTE] Unknown extension %02X %02X, treating as Nunchuk\n",
+                        printf("[WIIMOTE] Unknown extension %02X %02X\n",
                                data[10], data[11]);
-                        wii->ext_type = WII_EXT_NUNCHUK;
+                        wii->ext_type = WII_EXT_NONE;
                     }
                 }
             } else if (error != 0) {
