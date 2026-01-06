@@ -380,14 +380,14 @@ static void wiimote_process_report(bthid_device_t* device, const uint8_t* data, 
             if (raw_buttons & WII_BTN_PLUS)  buttons |= JP_BUTTON_S2;
             if (raw_buttons & WII_BTN_HOME)  buttons |= JP_BUTTON_A1;
 
-            // Orientation hotkeys: S2 (Plus) + D-pad Up = Vertical, S2 + Right = Horizontal, S2 + Down = Auto
-            // Flash save is deferred until BT disconnects to avoid timing issues
+            /// Orientation hotkeys: S2 (Plus) + D-pad Up = Vertical, Right = Horizontal, Down/Left = Auto
             bool plus_held = (raw_buttons & WII_BTN_PLUS) != 0;
             bool up_held = (raw_buttons & WII_BTN_UP) != 0;
             bool down_held = (raw_buttons & WII_BTN_DOWN) != 0;
+            bool left_held = (raw_buttons & WII_BTN_LEFT) != 0;
             bool right_held = (raw_buttons & WII_BTN_RIGHT) != 0;
 
-            if (plus_held && (up_held || down_held || right_held)) {
+            if (plus_held && (up_held || down_held || left_held || right_held)) {
                 if (!wii->orient_hotkey_active) {
                     wii->orient_hotkey_active = true;
                     uint8_t new_mode = up_held ? WII_ORIENT_MODE_VERTICAL :
@@ -406,7 +406,7 @@ static void wiimote_process_report(bthid_device_t* device, const uint8_t* data, 
                     }
                 }
                 // Consume the hotkey buttons so they don't pass through
-                buttons &= ~(JP_BUTTON_S2 | JP_BUTTON_DU | JP_BUTTON_DD | JP_BUTTON_DR);
+                buttons &= ~(JP_BUTTON_S2 | JP_BUTTON_DU | JP_BUTTON_DD | JP_BUTTON_DL | JP_BUTTON_DR);
             } else {
                 wii->orient_hotkey_active = false;
             }
