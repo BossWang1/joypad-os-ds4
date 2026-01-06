@@ -520,8 +520,8 @@ joypad_target_common(joypad_usb_rp2040zero)
 joypad_add_btstack(joypad_usb_rp2040zero)
 
 # --- USB to USB (Waveshare RP2350A) ---
-add_executable(joypad_usb_waveshare_rp2350a)
-target_compile_definitions(joypad_usb_waveshare_rp2350a PRIVATE
+add_executable(joypad_usb_rp2350usba)
+target_compile_definitions(joypad_usb_rp2350usba PRIVATE
     CONFIG_USB=1
     CONFIG_PIO_USB_DP_PIN=12
     PICO_DEFAULT_PIO_USB_DP_PIN=12
@@ -530,16 +530,16 @@ target_compile_definitions(joypad_usb_waveshare_rp2350a PRIVATE
     USE_BOOTSEL_BUTTON=1
     APP_NAME="usb2usb"
 )
-target_sources(joypad_usb_waveshare_rp2350a PUBLIC ${COMMON_SOURCES} ${USB_DEVICE_SOURCES}
+target_sources(joypad_usb_rp2350usba PUBLIC ${COMMON_SOURCES} ${USB_DEVICE_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb/app.c
 )
-target_include_directories(joypad_usb_waveshare_rp2350a PUBLIC
+target_include_directories(joypad_usb_rp2350usba PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb
     ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd
 )
-target_link_libraries(joypad_usb_waveshare_rp2350a PRIVATE ${COMMON_LIBRARIES} tinyusb_device tinyusb_pico_pio_usb)
-joypad_target_common(joypad_usb_waveshare_rp2350a)
-joypad_add_btstack(joypad_usb_waveshare_rp2350a)
+target_link_libraries(joypad_usb_rp2350usba PRIVATE ${COMMON_LIBRARIES} tinyusb_device tinyusb_pico_pio_usb)
+joypad_target_common(joypad_usb_rp2350usba)
+joypad_add_btstack(joypad_usb_rp2350usba)
 
 # --- BT to USB (Pico W / Pico 2 W built-in Bluetooth) ---
 # Only build when targeting Pico W or Pico 2 W

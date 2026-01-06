@@ -64,7 +64,7 @@ jobs:
           COMMIT_HASH=${{ steps.commit.outputs.hash }}
 
           # Known board suffixes (order matters - check longer suffixes first)
-          BOARDS="pico2_w pico_w rp2040zero kb2040 feather pico macropad"
+          BOARDS="pico2_w pico_w rp2040zero rp2350usba kb2040 feather pico macropad"
 
           # Group files by app name (extract app from joypad_<version>_<app>_<board>.uf2)
           for file in releases/joypad_*.uf2; do

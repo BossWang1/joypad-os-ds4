@@ -44,7 +44,7 @@ BOARD_SCRIPT_qtpy := boards/build_ada_qtpy.sh
 BOARD_SCRIPT_rp2040zero := boards/build_waveshare_rp2040_zero.sh
 BOARD_SCRIPT_feather_usbhost := boards/build_ada_feather_usbhost.sh
 BOARD_SCRIPT_macropad := boards/build_ada_macropad.sh
-BOARD_SCRIPT_waveshare_rp2350a := boards/build_waveshare_rp2350_usb_a.sh
+BOARD_SCRIPT_rp2350usba := boards/build_waveshare_rp2350_usb_a.sh
 
 # Console targets (cmake target names)
 CONSOLE_3do := joypad_3do
@@ -57,7 +57,7 @@ CONSOLE_snes3do := joypad_snes3do
 CONSOLE_uart := joypad_uart
 CONSOLE_usb := joypad_usb
 CONSOLE_usb_rp2040zero := joypad_usb_rp2040zero
-CONSOLE_usb_waveshare_rp2350a := joypad_usb_waveshare_rp2350a
+CONSOLE_usb_rp2350usba := joypad_usb_rp2350usba
 CONSOLE_bt2usb := joypad_bt2usb
 CONSOLE_snes2usb := joypad_snes2usb
 CONSOLE_controller_fisherprice := joypad_controller_fisherprice
@@ -77,7 +77,7 @@ APP_snes23do_rp2040zero := rp2040zero snes3do snes23do_rp2040zero SNES 3DO
 APP_usb2uart_kb2040 := kb2040 uart usb2uart_kb2040 USB/BT UART
 APP_usb2usb_feather := feather_usbhost usb usb2usb_feather USB/BT USB
 APP_usb2usb_rp2040zero := rp2040zero usb_rp2040zero usb2usb_rp2040zero USB/BT USB
-APP_usb2usb_waveshare_rp2350a := waveshare_rp2350a usb_waveshare_rp2350a usb2usb_waveshare_rp2350a USB/BT USB
+APP_usb2usb_rp2350usba := rp2350usba usb_rp2350usba usb2usb_rp2350usba USB/BT USB
 APP_bt2usb_pico_w := pico_w bt2usb bt2usb_pico_w Bluetooth USB
 APP_bt2usb_pico2_w := pico2_w bt2usb bt2usb_pico2_w Bluetooth USB
 APP_snes2usb_kb2040 := kb2040 snes2usb snes2usb_kb2040 SNES USB
@@ -87,7 +87,7 @@ APP_controller_alpakka_pico := pico controller_alpakka controller_alpakka_pico G
 APP_controller_macropad := macropad controller_macropad controller_macropad GPIO USB
 
 # All apps (note: controller_macropad not included - build explicitly with 'make controller_macropad')
-APPS := usb2pce_kb2040 usb2gc_kb2040 usb2gc_rp2040zero usb2nuon_kb2040 usb2loopy_kb2040 usb23do_rp2040zero snes23do_rp2040zero usb2uart_kb2040 usb2usb_feather usb2usb_rp2040zero usb2usb_waveshare_rp2350a bt2usb_pico_w bt2usb_pico2_w snes2usb_kb2040 controller_fisherprice_kb2040 controller_alpakka_pico
+APPS := usb2pce_kb2040 usb2gc_kb2040 usb2gc_rp2040zero usb2nuon_kb2040 usb2loopy_kb2040 usb23do_rp2040zero snes23do_rp2040zero usb2uart_kb2040 usb2usb_feather usb2usb_rp2040zero usb2usb_rp2350usba bt2usb_pico_w bt2usb_pico2_w snes2usb_kb2040 controller_fisherprice_kb2040 controller_alpakka_pico
 
 # Stable apps for release
 RELEASE_APPS := usb2pce_kb2040 usb2gc_kb2040 usb2gc_rp2040zero usb2nuon_kb2040 usb2loopy_kb2040 usb23do_rp2040zero usb2usb_feather usb2usb_rp2040zero bt2usb_pico_w snes2usb_kb2040 snes23do_rp2040zero
@@ -134,7 +134,7 @@ help:
 	@echo "  make usb2uart_kb2040    - USB -> UART/ESP32 (KB2040)"
 	@echo "  make usb2usb_feather    - USB/BT -> USB HID (Feather USB Host)"
 	@echo "  make usb2usb_rp2040zero - USB/BT -> USB HID (RP2040-Zero)"
-	@echo "  make usb2usb_waveshare_rp2350a - USB/BT -> USB HID (Waveshare RP2350A)"
+	@echo "  make usb2usb_rp2350usba - USB/BT -> USB HID (Waveshare RP2350A)"
 	@echo "  make bt2usb_pico_w      - Bluetooth -> USB HID (Pico W)"
 	@echo "  make snes2usb_kb2040    - SNES -> USB HID (KB2040)"
 	@echo "  make controller_fisherprice_kb2040 - GPIO -> USB HID (KB2040)"
@@ -243,9 +243,9 @@ usb2usb_feather:
 usb2usb_rp2040zero:
 	$(call build_app,usb2usb_rp2040zero)
 
-.PHONY: usb2usb_waveshare_rp2350a
-usb2usb_waveshare_rp2350a:
-	$(call build_app,usb2usb_waveshare_rp2350a)
+.PHONY: usb2usb_rp2350usba
+usb2usb_rp2350usba:
+	$(call build_app,usb2usb_rp2350usba)
 
 .PHONY: bt2usb_pico_w
 bt2usb_pico_w:
@@ -415,9 +415,9 @@ flash-usb2usb_feather:
 flash-usb2usb_rp2040zero:
 	@$(MAKE) --no-print-directory _flash_app APP_NAME=usb2usb_rp2040zero
 
-.PHONY: flash-usb2usb_waveshare_rp2350a
-flash-usb2usb_waveshare_rp2350a:
-	@$(MAKE) --no-print-directory _flash_app APP_NAME=usb2usb_waveshare_rp2350a
+.PHONY: flash-usb2usb_rp2350usba
+flash-usb2usb_rp2350usba:
+	@$(MAKE) --no-print-directory _flash_app APP_NAME=usb2usb_rp2350usba
 
 .PHONY: flash-bt2usb_pico_w
 flash-bt2usb_pico_w:
