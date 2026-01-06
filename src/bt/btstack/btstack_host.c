@@ -2853,6 +2853,12 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
                         bthid_update_device_info(conn_index, conn->name,
                                                  conn->vendor_id, conn->product_id);
 
+                        // NOTE: We previously called hid_host_get_l2cap_cids() here to get L2CAP CIDs
+                        // from HID Host for direct L2CAP sending (Wiimotes don't support SET_PROTOCOL).
+                        // This required a custom BTstack patch (see .dev/docs/btstack-patches.md).
+                        // Removed because CI uses upstream BTstack without the patch.
+                        // If Wiimote HID Host mode has issues, consider re-adding the patch.
+
                         printf("[BTSTACK_HOST] Wiimote: conn_index=%d control_cid=0x%04X interrupt_cid=0x%04X using_hid_host=%d\n",
                                conn_index, wiimote_conn.control_cid, wiimote_conn.interrupt_cid, wiimote_conn.using_hid_host);
 
