@@ -18,6 +18,7 @@
 // Device name lookup for USB HID
 #ifdef CONFIG_USB_HOST
 #include "usb/usbh/hid/hid_registry.h"
+#include "tusb.h"
 extern int hid_get_ctrl_type(uint8_t dev_addr, uint8_t instance);
 #endif
 
@@ -65,6 +66,14 @@ static const char* get_device_name(const input_event_t* event) {
             int ctrl_type = hid_get_ctrl_type(event->dev_addr, event->instance);
             if (ctrl_type >= 0 && ctrl_type < CONTROLLER_TYPE_COUNT &&
                 device_interfaces[ctrl_type] && device_interfaces[ctrl_type]->name) {
+                // Check for Switch 2 variants by PID
+                if (ctrl_type == CONTROLLER_SWITCH2) {
+                    uint16_t vid, pid;
+                    tuh_vid_pid_get(event->dev_addr, &vid, &pid);
+                    if (pid == 0x2073) {  // Switch 2 GameCube PID
+                        return "Switch 2 GameCube";
+                    }
+                }
                 return device_interfaces[ctrl_type]->name;
             }
             return "USB Device";
