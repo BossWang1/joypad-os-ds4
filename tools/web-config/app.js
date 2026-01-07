@@ -2,14 +2,15 @@
  * Joypad Config Web App
  */
 
-// Button names matching JP_BUTTON_* order
+// Button names matching JP_BUTTON_* order (W3C Gamepad API)
 const BUTTON_NAMES = [
     'B1', 'B2', 'B3', 'B4',     // Face buttons
     'L1', 'R1', 'L2', 'R2',     // Shoulders
     'S1', 'S2',                 // Select/Start
     'L3', 'R3',                 // Stick clicks
     'DU', 'DD', 'DL', 'DR',     // D-pad
-    'A1', 'A2'                  // Home/Guide, A2
+    'A1', 'A2', 'A3', 'A4',     // Auxiliary (Home, Capture, Mute, etc)
+    'L4', 'R4'                  // Paddles
 ];
 
 // Friendly button names for UI
@@ -31,7 +32,11 @@ const BUTTON_LABELS = {
     'DL': 'D-Pad Left',
     'DR': 'D-Pad Right',
     'A1': 'Home / Guide',
-    'A2': 'Aux 2'
+    'A2': 'Capture / Touchpad',
+    'A3': 'Mute',
+    'A4': 'Aux 4',
+    'L4': 'L4 / Paddle 1',
+    'R4': 'R4 / Paddle 2'
 };
 
 // Profile flags
