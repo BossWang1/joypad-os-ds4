@@ -513,14 +513,16 @@ static void reinit_on_player_assign(uint8_t dev_addr, uint8_t instance) {
   inst->haptics_enabled = true;  // Mark so we don't do this again
 }
 
-// Send player LED update via bulk endpoint
+// Send player LED update
+// Pro Controller: via bulk endpoint
+// GameCube: via HID output report (report ID 0x03)
 // LED command format: [0x09, 0x91, 0x00, 0x07, 0x00, 0x08, 0x00, 0x00, pattern, ...]
 static void output_player_led(uint8_t dev_addr, uint8_t instance, uint8_t player_index) {
   switch2_instance_t* inst = &switch2_devices[dev_addr].instances[instance];
 
-  // On first player assignment, re-run full init sequence
+  // On first player assignment, re-run full init sequence (Pro only)
   // This fixes rumble not working after fresh power cycle
-  if (!inst->haptics_enabled && player_index < 4) {
+  if (!inst->haptics_enabled && player_index < 4 && inst->pid != SWITCH2_GC_PID) {
     reinit_on_player_assign(dev_addr, instance);
     return;  // Will send LED after init completes
   }
@@ -530,40 +532,43 @@ static void output_player_led(uint8_t dev_addr, uint8_t instance, uint8_t player
     return;
   }
 
-  // Check endpoint is valid
-  if (inst->ep_out == 0) {
-    printf("[SWITCH2] LED: No bulk endpoint!\r\n");
-    return;
-  }
-
-  // Check if a transfer is already pending
-  if (inst->xfer_pending) {
-    // Try again next task cycle
-    return;
-  }
-
   printf("[SWITCH2] Player LED: %d -> %d\r\n", inst->player_led, player_index);
   inst->player_led = player_index;
 
   // Build LED command
-  static uint8_t led_cmd[16];
-  led_cmd[0] = 0x09;
+  static uint8_t led_cmd[64];
+  memset(led_cmd, 0, sizeof(led_cmd));
+  led_cmd[0] = 0x09;  // LED command
   led_cmd[1] = 0x91;
   led_cmd[2] = 0x00;
-  led_cmd[3] = 0x07;
+  led_cmd[3] = 0x07;  // LED subcommand
   led_cmd[4] = 0x00;
   led_cmd[5] = 0x08;
   led_cmd[6] = 0x00;
   led_cmd[7] = 0x00;
   led_cmd[8] = (player_index < 4) ? SWITCH2_LED_PATTERNS[player_index] : 0x01;
-  memset(&led_cmd[9], 0, 7);
 
-  // Send via bulk endpoint
-  bool sent = send_command(dev_addr, instance, inst->ep_out, led_cmd, 16);
-  if (sent) {
-    inst->xfer_pending = true;
+  bool sent = false;
+
+  if (inst->pid == SWITCH2_GC_PID) {
+    // GameCube: send via HID output report (report ID 0x03)
+    sent = tuh_hid_send_report(dev_addr, instance, 0x03, led_cmd, 63);
+    printf("[SWITCH2] GC LED send: %s\r\n", sent ? "OK" : "FAIL");
+  } else {
+    // Pro Controller: send via bulk endpoint
+    if (inst->ep_out == 0) {
+      printf("[SWITCH2] LED: No bulk endpoint!\r\n");
+      return;
+    }
+    if (inst->xfer_pending) {
+      return;  // Try again next task cycle
+    }
+    sent = send_command(dev_addr, instance, inst->ep_out, led_cmd, 16);
+    if (sent) {
+      inst->xfer_pending = true;
+    }
+    printf("[SWITCH2] LED send: %s (ep=0x%02X)\r\n", sent ? "OK" : "FAIL", inst->ep_out);
   }
-  printf("[SWITCH2] LED send: %s (ep=0x%02X)\r\n", sent ? "OK" : "FAIL", inst->ep_out);
 }
 
 // Task function - handles initialization state machine and output
