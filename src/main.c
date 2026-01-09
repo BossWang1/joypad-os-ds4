@@ -56,7 +56,7 @@ static void core1_wrapper(void) {
 
   // Wait for Core 0 to assign a task (or signal no task needed)
   while (!core1_task_ready) {
-    __wfi();  // Wait for interrupt (low power idle)
+    __wfe();  // Wait for event (woken by __sev() from Core 0)
   }
 
   // Run the actual core1 task if one was provided
@@ -151,6 +151,7 @@ int main(void)
   printf("[joypad] Signaling core1 (task: %s)\n",
          core1_actual_task ? "yes" : "idle");
   core1_task_ready = true;
+  __sev();  // Send event to wake Core 1 from __wfe()
 
   core0_main();
 
