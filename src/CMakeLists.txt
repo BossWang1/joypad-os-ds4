@@ -424,7 +424,7 @@ pico_generate_pio_header(joypad_loopy ${CMAKE_CURRENT_LIST_DIR}/native/device/lo
 
 # --- Dreamcast ---
 add_executable(joypad_dc)
-target_compile_definitions(joypad_dc PRIVATE CONFIG_DC=1 CONFIG_USB_HOST=1)
+target_compile_definitions(joypad_dc PRIVATE CONFIG_DC=1 CONFIG_USB_HOST=1 CONFIG_DC_CORE1_TX=1)
 target_sources(joypad_dc PUBLIC ${COMMON_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/native/device/dreamcast/dreamcast_device.c
     ${CMAKE_CURRENT_SOURCE_DIR}/native/device/dreamcast/maple_state_machine.c
@@ -441,7 +441,7 @@ pico_generate_pio_header(joypad_dc ${CMAKE_CURRENT_LIST_DIR}/native/device/dream
 
 # --- N64 to Dreamcast ---
 add_executable(joypad_n642dc)
-# Testing: disable joybus to isolate DC detection issue
+# Uses Core 0 TX (no CONFIG_DC_CORE1_TX) - this was working before rumble changes
 target_compile_definitions(joypad_n642dc PRIVATE CONFIG_N642DC=1 CONFIG_DC=1 CONFIG_NO_NEOPIXEL=1 N64_PIN_DATA=29)
 target_sources(joypad_n642dc PUBLIC ${COMMON_SOURCES}
     ${N64_HOST_SOURCES}

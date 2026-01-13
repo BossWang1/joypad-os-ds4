@@ -83,6 +83,14 @@ static void __not_in_flash_func(core0_main)(void)
     players_task();
     if (first_loop) printf("[joypad] Loop: storage\n");
     storage_task();
+    // Run output interface tasks FIRST (ensures DC maple is set up before input polling)
+    for (uint8_t i = 0; i < output_count; i++) {
+      if (outputs[i] && outputs[i]->task) {
+        if (first_loop) printf("[joypad] Loop: output %s\n", outputs[i]->name);
+        outputs[i]->task();
+      }
+    }
+
     if (first_loop) printf("[joypad] Loop: app\n");
     app_task();
 
@@ -91,14 +99,6 @@ static void __not_in_flash_func(core0_main)(void)
       if (inputs[i] && inputs[i]->task) {
         if (first_loop) printf("[joypad] Loop: input %s\n", inputs[i]->name);
         inputs[i]->task();
-      }
-    }
-
-    // Run all output interface tasks
-    for (uint8_t i = 0; i < output_count; i++) {
-      if (outputs[i] && outputs[i]->task) {
-        if (first_loop) printf("[joypad] Loop: output %s\n", outputs[i]->name);
-        outputs[i]->task();
       }
     }
     first_loop = false;

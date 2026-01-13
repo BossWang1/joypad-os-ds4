@@ -3,8 +3,8 @@
 //
 // Routes native N64 controller input to Dreamcast Maple Bus output.
 // Both protocols use PIO state machines:
-// - N64: joybus on PIO0
-// - Dreamcast: Maple TX on PIO0, Maple RX on PIO1
+// - Dreamcast: Maple TX on PIO0 (SM0), Maple RX on PIO1 (SM0-2) using 10 slots
+// - N64: joybus on PIO1 (SM3) at offset 10, leaving room for maple_rx
 
 #include "app.h"
 #include "core/router/router.h"

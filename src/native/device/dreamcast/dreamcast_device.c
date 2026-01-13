@@ -4,9 +4,14 @@
 // Ported from MaplePad by Charlie Cole / mackieks
 // https://github.com/mackieks/MaplePad
 //
-// Architecture:
-// - Core 1: RX only - decodes Maple Bus packets into ring buffer
-// - Core 0: Processes packets and sends responses via DMA
+// Architecture (CONFIG_DC_CORE1_TX enabled):
+// - Core 1: RX and TX - decodes packets and sends responses immediately
+// - Core 0: Updates controller state from router, handles rumble timeouts
+//
+// PIO allocation:
+// - PIO0 SM0: maple_tx (29 instructions)
+// - PIO1 SM0-2: maple_rx_triple (10 instructions total)
+// - PIO1 SM3: available for other protocols (e.g., N64 joybus at offset 10)
 
 #include "dreamcast_device.h"
 #include "maple_state_machine.h"
@@ -862,6 +867,7 @@ static void __no_inline_not_in_flash_func(core1_rx_task)(void)
             if (XOR == 0) {  // CRC valid
                 rx_crc_ok++;
 
+#ifdef CONFIG_DC_CORE1_TX
                 // Process and respond IMMEDIATELY on Core 1 (like GameCube)
                 // Copy and byte-swap packet data from RxBuffer to Packet buffer
                 // (ConsumePacket reads from Packet, not RxBuffer)
@@ -909,6 +915,11 @@ static void __no_inline_not_in_flash_func(core1_rx_task)(void)
                     }
                     NextPacketSend = SEND_NOTHING;
                 }
+#else
+                // Queue packet for Core 0 processing
+                packet_ends[packet_end_write] = Offset;
+                packet_end_write = (packet_end_write + 1) & 15;
+#endif
 
                 StartOfPacket = ((Offset + 3) & ~3);  // Align for next packet
             } else {
@@ -952,20 +963,18 @@ static void SetupMapleTX(void)
 
 static void SetupMapleRX(void)
 {
+    // Claim SM0-2 for maple_rx before use
+    for (int sm = 0; sm < 3; sm++) {
+        pio_sm_claim(RXPIO, sm);
+    }
+
     uint offsets[3];
     offsets[0] = pio_add_program(RXPIO, &maple_rx_triple1_program);
     offsets[1] = pio_add_program(RXPIO, &maple_rx_triple2_program);
     offsets[2] = pio_add_program(RXPIO, &maple_rx_triple3_program);
 
-    printf("[DC] maple_rx offsets: %d, %d, %d (PIO1)\n", offsets[0], offsets[1], offsets[2]);
-
     // Clock divider of 3.0 (from MaplePad)
     maple_rx_triple_program_init(RXPIO, offsets, MAPLE_PIN1, MAPLE_PIN5, 3.0f);
-
-    // Print GPIO state for debugging
-    printf("[DC] GPIO %d state: %d, GPIO %d state: %d\n",
-           MAPLE_PIN1, gpio_get(MAPLE_PIN1),
-           MAPLE_PIN5, gpio_get(MAPLE_PIN5));
 
     // Wait for core1 to be ready (use flag instead of FIFO - FIFO is used by flash lockout)
     while (!core1_ready) {
