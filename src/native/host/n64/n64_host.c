@@ -24,6 +24,7 @@ static N64Controller n64_controllers[N64_MAX_PORTS];
 static bool initialized = false;
 static bool rumble_state[N64_MAX_PORTS] = {false};
 static bool rumble_pending[N64_MAX_PORTS] = {false};  // Deferred rumble update flag
+static bool rumble_pak_initialized[N64_MAX_PORTS] = {false};  // Track pak init state
 
 // Track previous state for edge detection
 static uint32_t prev_buttons[N64_MAX_PORTS] = {0};
@@ -173,6 +174,8 @@ void n64_host_task(void)
             if (want_rumble != rumble_state[port]) {
                 n64_host_set_rumble(port, want_rumble);
             }
+            // Clear dirty flag after processing
+            feedback_clear_dirty(port);
         }
     }
 
@@ -293,6 +296,12 @@ void n64_host_flush_rumble(void)
     if (!initialized) return;
 
     for (uint8_t port = 0; port < N64_MAX_PORTS; port++) {
+        // Reset pak init state if controller disconnected
+        if (!N64Controller_IsInitialized(&n64_controllers[port])) {
+            rumble_pak_initialized[port] = false;
+            continue;
+        }
+
         if (rumble_pending[port]) {
             // Rate limit: skip if we sent a command too recently
             if (!time_reached(last_rumble_time[port])) {
@@ -302,6 +311,12 @@ void n64_host_flush_rumble(void)
 
             rumble_pending[port] = false;
             last_rumble_time[port] = make_timeout_time_ms(RUMBLE_MIN_INTERVAL_MS);
+
+            // Initialize rumble pak on first rumble-on request
+            if (rumble_state[port] && !rumble_pak_initialized[port]) {
+                N64Controller_InitRumblePak(&n64_controllers[port]);
+                rumble_pak_initialized[port] = true;
+            }
 
             // Now it's safe to do the blocking joybus write
             N64Controller_SetRumble(&n64_controllers[port], rumble_state[port]);
