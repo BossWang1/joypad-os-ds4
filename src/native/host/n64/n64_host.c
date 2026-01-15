@@ -26,6 +26,7 @@ static bool rumble_state[N64_MAX_PORTS] = {false};
 static bool rumble_pending[N64_MAX_PORTS] = {false};  // Deferred rumble update flag
 static bool rumble_pak_initialized[N64_MAX_PORTS] = {false};  // Track pak init state
 static uint8_t connected_polls[N64_MAX_PORTS] = {0};  // Count polls after connect for pak init
+static uint8_t disconnect_debounce[N64_MAX_PORTS] = {0};  // Debounce brief disconnects
 
 // Track previous state for edge detection
 static uint32_t prev_buttons[N64_MAX_PORTS] = {0};
@@ -191,23 +192,33 @@ void n64_host_task(void)
         bool is_connected = N64Controller_IsInitialized(controller);
 
         if (!is_connected) {
-            // Controller disconnected or not yet initialized
+            // Debounce: require 30 consecutive disconnects (~500ms) before reporting
+            // Brief disconnects are normal during pak commands
             if (connected_polls[port] > 0) {
-                connected_polls[port] = 0;
-                rumble_pak_initialized[port] = false;
-                printf("[n64_host] Port %d: disconnected\n", port);
+                disconnect_debounce[port]++;
+                if (disconnect_debounce[port] >= 30) {
+                    connected_polls[port] = 0;
+                    disconnect_debounce[port] = 0;
+                    rumble_pak_initialized[port] = false;  // Real disconnect - reset pak
+                    printf("[n64_host] Port %d: disconnected\n", port);
+                }
             }
-        } else if (connected_polls[port] == 0) {
-            // Just connected - start counting polls
-            connected_polls[port] = 1;
-            printf("[n64_host] Port %d: connected\n", port);
+        } else {
+            // Connected - reset debounce counter
+            disconnect_debounce[port] = 0;
+            if (connected_polls[port] == 0) {
+                // Just connected - start counting polls
+                connected_polls[port] = 1;
+                printf("[n64_host] Port %d: connected\n", port);
+            }
         }
 
-        // Init rumble pak after stable connection (few polls after connect)
+        // Init rumble pak ONCE after first stable connection
+        // Don't re-init on brief disconnects (pak commands can cause poll failures)
         if (is_connected && connected_polls[port] > 0 && connected_polls[port] < 255) {
             connected_polls[port]++;
 
-            // Init pak after 10 polls (~170ms at 60Hz)
+            // Init pak after 10 polls (~170ms at 60Hz), only if never initialized
             if (connected_polls[port] == 10 && !rumble_pak_initialized[port]) {
                 if (N64Controller_HasPak(controller)) {
                     printf("[n64_host] Port %d: pak detected, initializing rumble\n", port);
@@ -329,9 +340,8 @@ void n64_host_flush_rumble(void)
     if (!initialized) return;
 
     for (uint8_t port = 0; port < N64_MAX_PORTS; port++) {
-        // Reset pak init state if controller disconnected
+        // Skip if controller not initialized (but don't reset pak state)
         if (!N64Controller_IsInitialized(&n64_controllers[port])) {
-            rumble_pak_initialized[port] = false;
             continue;
         }
 
