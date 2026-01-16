@@ -343,17 +343,6 @@ jobs:
                - For usb2gc: just connect USB-C (no BOOT button needed)
             3. Drag & drop the `.uf2` file to the `RPI-RP2` drive
             4. Drive will auto-eject when complete
-
-            ## Products
-
-            | Firmware | Console | Board |
-            |----------|---------|-------|
-            | usb2pce | PC Engine / TurboGrafx-16 | KB2040 |
-            | usb2gc | Nintendo GameCube | KB2040 |
-            | usb2nuon | VM Labs Nuon | KB2040 |
-            | usb2dc | Sega Dreamcast | KB2040 |
-            | n642dc | N64 to Dreamcast | KB2040 |
-            | n642usb | N64 to USB | KB2040 |
           files: |
             releases/*
           draft: false

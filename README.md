@@ -48,16 +48,6 @@ Joypad OS is the real-time nervous system of the Joypad platform.
 
 ---
 
-## Products
-
-Pre-built adapters available at **[controlleradapter.com](https://controlleradapter.com)**:
-
-- **[USB-2-PCE](https://controlleradapter.com/products/usb-2-pce)** - PCEngine/TurboGrafx-16 adapter
-- **[GC USB](https://controlleradapter.com/products/gc-usb)** - GameCube/Wii adapter with profiles
-- **[NUON USB](https://controlleradapter.com/products/nuon-usb)** - Nuon DVD player adapter
-
----
-
 ## Supported Input Devices
 
 **USB Controllers:**
