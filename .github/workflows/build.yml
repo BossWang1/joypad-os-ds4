@@ -53,7 +53,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             -e GIT_COMMIT=${COMMIT_HASH} \
-            joypad:latest /bin/bash -c "make -j\$(nproc) all"
+            joypad:latest /bin/bash -c "make all"
 
           # Fix permissions (Docker creates files as root)
           sudo chown -R $(id -u):$(id -g) releases/

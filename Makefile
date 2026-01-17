@@ -4,6 +4,9 @@
 # Default target
 .DEFAULT_GOAL := help
 
+# Parallel jobs for cmake builds (auto-detect cores, fallback to 4)
+JOBS := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
 # Ensure PICO_TOOLCHAIN_PATH is set
 ifndef PICO_TOOLCHAIN_PATH
     # Try macOS default location
@@ -207,7 +210,7 @@ define build_app
 	@echo "  Version: $(VERSION_ID)"
 	@cd src && rm -rf build
 	@cd src && sh $(BOARD_SCRIPT_$(word 1,$(APP_$1)))
-	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_$(word 2,$(APP_$1))) -j4
+	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_$(word 2,$(APP_$1))) -j$(JOBS)
 	@mkdir -p $(RELEASE_DIR)
 	@cp src/build/$(CONSOLE_$(word 2,$(APP_$1))).uf2 \
 	    $(RELEASE_DIR)/joypad_$(VERSION_ID)_$(word 3,$(APP_$1)).uf2
@@ -310,7 +313,7 @@ controller_macropad:
 3do:
 	@echo "$(YELLOW)Building 3DO (KB2040)...$(NC)"
 	@cd src && rm -rf build && sh $(BOARD_SCRIPT_kb2040)
-	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_3do) -j4
+	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_3do) -j$(JOBS)
 	@echo "$(GREEN)✓ 3DO built successfully$(NC)"
 	@echo "  Output: src/build/$(CONSOLE_3do).uf2"
 	@echo ""
@@ -319,7 +322,7 @@ controller_macropad:
 pce:
 	@echo "$(YELLOW)Building PCEngine (KB2040)...$(NC)"
 	@cd src && rm -rf build && sh $(BOARD_SCRIPT_kb2040)
-	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_pce) -j4
+	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_pce) -j$(JOBS)
 	@echo "$(GREEN)✓ PCEngine built successfully$(NC)"
 	@echo "  Output: src/build/$(CONSOLE_pce).uf2"
 	@echo ""
@@ -328,7 +331,7 @@ pce:
 ngc:
 	@echo "$(YELLOW)Building GameCube (KB2040)...$(NC)"
 	@cd src && rm -rf build && sh $(BOARD_SCRIPT_kb2040)
-	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_ngc) -j4
+	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_ngc) -j$(JOBS)
 	@echo "$(GREEN)✓ GameCube built successfully$(NC)"
 	@echo "  Output: src/build/$(CONSOLE_ngc).uf2"
 	@echo ""
@@ -337,7 +340,7 @@ ngc:
 ngc_rp2040zero:
 	@echo "$(YELLOW)Building GameCube (RP2040-Zero)...$(NC)"
 	@cd src && rm -rf build && sh $(BOARD_SCRIPT_rp2040zero)
-	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_ngc) -j4
+	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_ngc) -j$(JOBS)
 	@echo "$(GREEN)✓ GameCube built successfully$(NC)"
 	@echo "  Output: src/build/$(CONSOLE_ngc).uf2"
 	@echo ""
@@ -346,7 +349,7 @@ ngc_rp2040zero:
 nuon:
 	@echo "$(YELLOW)Building Nuon (KB2040)...$(NC)"
 	@cd src && rm -rf build && sh $(BOARD_SCRIPT_kb2040)
-	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_nuon) -j4
+	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_nuon) -j$(JOBS)
 	@echo "$(GREEN)✓ Nuon built successfully$(NC)"
 	@echo "  Output: src/build/$(CONSOLE_nuon).uf2"
 	@echo ""
@@ -355,7 +358,7 @@ nuon:
 loopy:
 	@echo "$(YELLOW)Building Loopy (KB2040)...$(NC)"
 	@cd src && rm -rf build && sh $(BOARD_SCRIPT_kb2040)
-	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_loopy) -j4
+	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_loopy) -j$(JOBS)
 	@echo "$(GREEN)✓ Loopy built successfully$(NC)"
 	@echo "  Output: src/build/$(CONSOLE_loopy).uf2"
 	@echo ""
