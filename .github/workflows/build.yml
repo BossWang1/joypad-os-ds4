@@ -17,9 +17,31 @@ on:
           - major
 
 jobs:
-  # Build all apps (runs on every push)
+  # Build apps in parallel using matrix
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - usb2pce_kb2040
+          - usb2gc_kb2040
+          - usb2gc_rp2040zero
+          - usb2nuon_kb2040
+          - usb2dc_kb2040
+          - n642dc_kb2040
+          - usb23do_rp2040zero
+          - usb2uart_kb2040
+          - usb2usb_feather
+          - usb2usb_rp2040zero
+          - usb2usb_rp2350usba
+          - bt2usb_pico_w
+          - bt2usb_pico2_w
+          - snes2usb_kb2040
+          - n642usb_kb2040
+          - gc2usb_kb2040
+          - controller_fisherprice_kb2040
+          - controller_alpakka_pico
 
     steps:
       - name: Checkout code with submodules
@@ -44,36 +66,52 @@ jobs:
         id: commit
         run: echo "hash=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
 
-      - name: Build all apps
+      - name: Build ${{ matrix.app }}
         run: |
-          echo "Building all apps..."
-          COMMIT_HASH=${{ steps.commit.outputs.hash }}
-
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e GIT_COMMIT=${COMMIT_HASH} \
-            joypad:latest /bin/bash -c "make all"
+            -e GIT_COMMIT=${{ steps.commit.outputs.hash }} \
+            joypad:latest /bin/bash -c "make ${{ matrix.app }}"
 
-          # Fix permissions (Docker creates files as root)
           sudo chown -R $(id -u):$(id -g) releases/
 
-      - name: Organize artifacts by app
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.app }}
+          path: releases/*.uf2
+          if-no-files-found: error
+
+  # Collect all artifacts and create combined release package
+  collect:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-*
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Get commit hash
+        id: commit
+        run: echo "hash=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Organize artifacts
         run: |
-          mkdir -p artifacts
-          COMMIT_HASH=${{ steps.commit.outputs.hash }}
+          mkdir -p releases organized
+          mv artifacts/*.uf2 releases/
 
           # Known board suffixes (order matters - check longer suffixes first)
           BOARDS="pico2_w pico_w rp2040zero rp2350usba kb2040 feather pico macropad"
 
-          # Group files by app name (extract app from joypad_<version>_<app>_<board>.uf2)
           for file in releases/joypad_*.uf2; do
             if [ -f "$file" ]; then
-              # Extract app_board: remove prefix "joypad_<hash>_"
               basename=$(basename "$file" .uf2)
               app_board=${basename#joypad_*_}
 
-              # Remove known board suffix to get app name
               app="$app_board"
               for board in $BOARDS; do
                 if [[ "$app_board" == *"_${board}" ]]; then
@@ -82,119 +120,109 @@ jobs:
                 fi
               done
 
-              mkdir -p "artifacts/${app}"
-              cp "$file" "artifacts/${app}/"
-              echo "Added $file to ${app} artifact"
+              mkdir -p "organized/${app}"
+              cp "$file" "organized/${app}/"
             fi
           done
 
-          echo "Artifact structure:"
-          find artifacts -type f -name "*.uf2"
+          echo "Built firmware:"
+          ls -lh releases/*.uf2
 
-      - name: Upload app artifacts
+      # Upload organized artifacts by app
+      - name: Upload usb2pce
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_usb2pce
-          path: artifacts/usb2pce/*.uf2
+          path: organized/usb2pce/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload usb2gc artifacts
+      - name: Upload usb2gc
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_usb2gc
-          path: artifacts/usb2gc/*.uf2
+          path: organized/usb2gc/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload usb2nuon artifacts
+      - name: Upload usb2nuon
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_usb2nuon
-          path: artifacts/usb2nuon/*.uf2
+          path: organized/usb2nuon/*.uf2
           if-no-files-found: ignore
 
-      # usb2loopy excluded until more mature
-      # - name: Upload usb2loopy artifacts
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: joypad_${{ steps.commit.outputs.hash }}_usb2loopy
-      #     path: artifacts/usb2loopy/*.uf2
-      #     if-no-files-found: ignore
-
-      - name: Upload usb2dc artifacts
+      - name: Upload usb2dc
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_usb2dc
-          path: artifacts/usb2dc/*.uf2
+          path: organized/usb2dc/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload n642dc artifacts
+      - name: Upload n642dc
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_n642dc
-          path: artifacts/n642dc/*.uf2
+          path: organized/n642dc/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload usb23do artifacts
+      - name: Upload usb23do
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_usb23do
-          path: artifacts/usb23do/*.uf2
+          path: organized/usb23do/*.uf2
           if-no-files-found: ignore
 
-      # snes23do excluded until more mature
-      # - name: Upload snes23do artifacts
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: joypad_${{ steps.commit.outputs.hash }}_snes23do
-      #     path: artifacts/snes23do/*.uf2
-      #     if-no-files-found: ignore
-
-      - name: Upload usb2uart artifacts
+      - name: Upload usb2uart
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_usb2uart
-          path: artifacts/usb2uart/*.uf2
+          path: organized/usb2uart/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload usb2usb artifacts
+      - name: Upload usb2usb
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_usb2usb
-          path: artifacts/usb2usb/*.uf2
+          path: organized/usb2usb/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload bt2usb artifacts
+      - name: Upload bt2usb
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_bt2usb
-          path: artifacts/bt2usb/*.uf2
+          path: organized/bt2usb/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload snes2usb artifacts
+      - name: Upload snes2usb
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_snes2usb
-          path: artifacts/snes2usb/*.uf2
+          path: organized/snes2usb/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload n642usb artifacts
+      - name: Upload n642usb
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_n642usb
-          path: artifacts/n642usb/*.uf2
+          path: organized/n642usb/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload controller artifacts
+      - name: Upload gc2usb
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_gc2usb
+          path: organized/gc2usb/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload controllers
         uses: actions/upload-artifact@v4
         with:
           name: joypad_${{ steps.commit.outputs.hash }}_controllers
           path: |
-            artifacts/controller_fisherprice/*.uf2
-            artifacts/controller_alpakka/*.uf2
-            artifacts/controller_macropad/*.uf2
+            organized/controller_fisherprice/*.uf2
+            organized/controller_alpakka/*.uf2
           if-no-files-found: ignore
 
-      - name: Upload all releases for release job
+      - name: Upload release-firmware
         uses: actions/upload-artifact@v4
         with:
           name: release-firmware
@@ -235,7 +263,6 @@ jobs:
           CURRENT_VERSION=$(cat VERSION | tr -d '[:space:]')
           echo "Current version: $CURRENT_VERSION"
 
-          # Parse version (assuming semver X.Y.Z)
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
           case "${{ github.event.inputs.bump_version }}" in
@@ -280,7 +307,6 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          # Check if version tag exists
           if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
             echo "⏭️  Version v${VERSION} already has a release"
             echo "should_release=false" >> $GITHUB_OUTPUT
@@ -292,7 +318,7 @@ jobs:
 
   # Create GitHub Release (only on manual trigger when version is new)
   create-release:
-    needs: [build, check-version]
+    needs: [collect, check-version]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -310,12 +336,9 @@ jobs:
           VERSION="${{ needs.check-version.outputs.version }}"
           echo "📦 Preparing v${VERSION} release:"
 
-          # Rename files from commit hash to version number
-          # Pattern: joypad_<hash>_<app>_<board>.uf2 -> joypad_<version>_<app>_<board>.uf2
           cd releases
           for file in joypad_*_*.uf2; do
             if [ -f "$file" ]; then
-              # Remove "joypad_" prefix, then remove hash (up to next underscore)
               temp="${file#joypad_}"
               suffix="${temp#*_}"
               newname="joypad_${VERSION}_${suffix}"
@@ -326,7 +349,6 @@ jobs:
 
           ls -lh *.uf2
 
-          # Create checksums
           sha256sum *.uf2 > checksums.txt
           echo ""
           echo "🔐 Checksums:"
