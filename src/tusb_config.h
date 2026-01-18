@@ -139,6 +139,10 @@
   #define CFG_TUD_XINPUT            1   // Enable XInput class driver
   #define CFG_TUD_XINPUT_EP_BUFSIZE 32  // XInput endpoint buffer size
 
+  // GameCube Adapter mode support
+  #define CFG_TUD_GC_ADAPTER        1   // Enable GC adapter class driver
+  #define CFG_TUD_GC_ADAPTER_EP_BUFSIZE 37  // GC adapter endpoint buffer size (37 bytes)
+
   // CDC configuration: 0=none, 1=data only, 2=data+debug
   #ifndef USBR_CDC_DEBUG
   #define USBR_CDC_DEBUG            1   // Default: debug enabled

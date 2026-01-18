@@ -27,6 +27,8 @@ typedef enum {
     USB_OUTPUT_MODE_XBOX_ORIGINAL,      // Original Xbox (XID protocol)
     USB_OUTPUT_MODE_XBONE,              // Xbox One (GIP protocol)
     USB_OUTPUT_MODE_XAC,                // Xbox Adaptive Controller compatible
+    USB_OUTPUT_MODE_KEYBOARD_MOUSE,     // Keyboard + Mouse composite HID
+    USB_OUTPUT_MODE_GC_ADAPTER,         // GameCube Adapter for Wii U/Switch
     USB_OUTPUT_MODE_COUNT
 } usb_output_mode_t;
 

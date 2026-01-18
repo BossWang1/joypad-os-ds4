@@ -23,6 +23,9 @@
 #include "descriptors/ps4_descriptors.h"
 #include "descriptors/xbone_descriptors.h"
 #include "descriptors/xac_descriptors.h"
+#include "descriptors/kbmouse_descriptors.h"
+#include "descriptors/gc_adapter_descriptors.h"
+#include "kbmouse/kbmouse.h"
 #include "tud_xid.h"
 #include "tud_xinput.h"
 #include "tud_xbone.h"
@@ -86,6 +89,15 @@ static gip_input_report_t xbone_report;
 // Current XAC report (for Xbox Adaptive Controller compatible mode)
 static xac_in_report_t xac_report;
 
+// Current Keyboard/Mouse reports (for keyboard + mouse mode)
+static kbmouse_keyboard_report_t kbmouse_kb_report;
+static kbmouse_mouse_report_t kbmouse_mouse_report;
+
+// Current GC Adapter report (for GameCube Adapter mode)
+static gc_adapter_in_report_t gc_adapter_report;
+static gc_adapter_out_report_t gc_adapter_rumble;
+static bool gc_adapter_rumble_available = false;
+
 // ============================================================================
 // EVENT-DRIVEN OUTPUT STATE
 // ============================================================================
@@ -114,6 +126,8 @@ static const char* mode_names[] = {
     [USB_OUTPUT_MODE_PSCLASSIC] = "PS Classic",
     [USB_OUTPUT_MODE_XBONE] = "Xbox One",
     [USB_OUTPUT_MODE_XAC] = "XAC Compat",
+    [USB_OUTPUT_MODE_KEYBOARD_MOUSE] = "KB/Mouse",
+    [USB_OUTPUT_MODE_GC_ADAPTER] = "GC Adapter",
 };
 
 // ============================================================================
@@ -334,7 +348,7 @@ bool usbd_set_mode(usb_output_mode_t mode)
         return false;
     }
 
-    // Supported modes: HID, Xbox OG, XInput, PS3, PS4, Switch, PS Classic, Xbox One, XAC
+    // Supported modes: HID, Xbox OG, XInput, PS3, PS4, Switch, PS Classic, Xbox One, XAC, KB/Mouse, GC Adapter
     if (mode != USB_OUTPUT_MODE_HID &&
         mode != USB_OUTPUT_MODE_XBOX_ORIGINAL &&
         mode != USB_OUTPUT_MODE_XINPUT &&
@@ -343,7 +357,9 @@ bool usbd_set_mode(usb_output_mode_t mode)
         mode != USB_OUTPUT_MODE_SWITCH &&
         mode != USB_OUTPUT_MODE_PSCLASSIC &&
         mode != USB_OUTPUT_MODE_XBONE &&
-        mode != USB_OUTPUT_MODE_XAC) {
+        mode != USB_OUTPUT_MODE_XAC &&
+        mode != USB_OUTPUT_MODE_KEYBOARD_MOUSE &&
+        mode != USB_OUTPUT_MODE_GC_ADAPTER) {
         printf("[usbd] Mode %d not yet supported\n", mode);
         return false;
     }
@@ -412,6 +428,8 @@ usb_output_mode_t usbd_get_next_mode(void)
         case USB_OUTPUT_MODE_PS4:
             return USB_OUTPUT_MODE_SWITCH;
         case USB_OUTPUT_MODE_SWITCH:
+            return USB_OUTPUT_MODE_KEYBOARD_MOUSE;
+        case USB_OUTPUT_MODE_KEYBOARD_MOUSE:
         default:
             return USB_OUTPUT_MODE_HID;
     }
@@ -475,7 +493,9 @@ void usbd_init(void)
                 flash_settings.usb_output_mode == USB_OUTPUT_MODE_SWITCH ||
                 flash_settings.usb_output_mode == USB_OUTPUT_MODE_PSCLASSIC ||
                 flash_settings.usb_output_mode == USB_OUTPUT_MODE_XBONE ||
-                flash_settings.usb_output_mode == USB_OUTPUT_MODE_XAC) {
+                flash_settings.usb_output_mode == USB_OUTPUT_MODE_XAC ||
+                flash_settings.usb_output_mode == USB_OUTPUT_MODE_KEYBOARD_MOUSE ||
+                flash_settings.usb_output_mode == USB_OUTPUT_MODE_GC_ADAPTER) {
                 output_mode = (usb_output_mode_t)flash_settings.usb_output_mode;
                 printf("[usbd] Loaded mode from flash: %s\n", mode_names[output_mode]);
             } else {
@@ -573,6 +593,29 @@ void usbd_init(void)
             xac_init_report(&xac_report);
             break;
 
+        case USB_OUTPUT_MODE_KEYBOARD_MOUSE:
+            // Initialize keyboard/mouse converter
+            kbmouse_init();
+            memset(&kbmouse_kb_report, 0, sizeof(kbmouse_kb_report));
+            memset(&kbmouse_mouse_report, 0, sizeof(kbmouse_mouse_report));
+            break;
+
+        case USB_OUTPUT_MODE_GC_ADAPTER:
+            // Initialize GC Adapter report to neutral state
+            memset(&gc_adapter_report, 0, sizeof(gc_adapter_in_report_t));
+            gc_adapter_report.report_id = GC_ADAPTER_REPORT_ID_INPUT;
+            // Initialize all ports as disconnected with neutral analog values
+            for (int i = 0; i < 4; i++) {
+                gc_adapter_report.port[i].connected = GC_ADAPTER_PORT_NONE;
+                gc_adapter_report.port[i].type = GC_ADAPTER_TYPE_NONE;
+                gc_adapter_report.port[i].stick_x = 128;
+                gc_adapter_report.port[i].stick_y = 128;
+                gc_adapter_report.port[i].cstick_x = 128;
+                gc_adapter_report.port[i].cstick_y = 128;
+            }
+            memset(&gc_adapter_rumble, 0, sizeof(gc_adapter_out_report_t));
+            break;
+
         case USB_OUTPUT_MODE_HID:
         default:
             // Initialize HID report to neutral state
@@ -585,8 +628,9 @@ void usbd_init(void)
             break;
     }
 
-    // Initialize CDC subsystem (only for HID and Switch modes)
-    if (output_mode == USB_OUTPUT_MODE_HID || output_mode == USB_OUTPUT_MODE_SWITCH) {
+    // Initialize CDC subsystem (for HID, Switch, and KB/Mouse modes)
+    if (output_mode == USB_OUTPUT_MODE_HID || output_mode == USB_OUTPUT_MODE_SWITCH ||
+        output_mode == USB_OUTPUT_MODE_KEYBOARD_MOUSE) {
         cdc_init();
     }
 
@@ -669,6 +713,24 @@ void usbd_task(void)
                 usbd_send_report(0);
             }
             break;
+
+        case USB_OUTPUT_MODE_KEYBOARD_MOUSE:
+            // KB/Mouse mode: process CDC tasks, send keyboard and mouse reports
+            cdc_task();
+            if (tud_hid_ready()) {
+                usbd_send_report(0);
+            }
+            break;
+
+#if CFG_TUD_GC_ADAPTER
+        case USB_OUTPUT_MODE_GC_ADAPTER:
+            // GC Adapter mode: rumble is handled via tud_hid_set_report_cb()
+            // Send GC adapter report if ready
+            if (tud_hid_ready()) {
+                usbd_send_report(0);
+            }
+            break;
+#endif
 
         case USB_OUTPUT_MODE_HID:
         default:
@@ -1263,6 +1325,127 @@ static bool usbd_send_xac_report(uint8_t player_index)
     return tud_hid_report(0, &xac_report, sizeof(xac_report));
 }
 
+// Send keyboard/mouse reports (KB/Mouse mode)
+// Alternates between keyboard and mouse reports since TinyUSB can only send one at a time
+static bool usbd_send_kbmouse_report(uint8_t player_index)
+{
+    static bool send_keyboard_next = true;
+
+    if (!tud_hid_ready()) {
+        return false;
+    }
+
+    // Check for pending event (event-driven from tap callback)
+    if (player_index >= USB_MAX_PLAYERS || !pending_flags[player_index]) {
+        // No new input, but still send mouse report for continuous movement
+        // (mouse needs constant updates even when stick is held)
+        if (!send_keyboard_next) {
+            send_keyboard_next = true;
+            return tud_hid_mouse_report(KBMOUSE_REPORT_ID_MOUSE,
+                                        kbmouse_mouse_report.buttons,
+                                        kbmouse_mouse_report.x,
+                                        kbmouse_mouse_report.y,
+                                        kbmouse_mouse_report.wheel,
+                                        kbmouse_mouse_report.pan);
+        }
+        return false;
+    }
+
+    const input_event_t* event = &pending_events[player_index];
+    pending_flags[player_index] = false;  // Clear after consumption
+
+    // Apply profile (combos, button remaps)
+    profile_output_t profile_out;
+    uint32_t buttons = apply_usbd_profile(event, &profile_out);
+
+    // Convert gamepad to keyboard/mouse reports
+    kbmouse_convert(buttons, &profile_out, &kbmouse_kb_report, &kbmouse_mouse_report);
+
+    // Alternate between keyboard and mouse reports
+    if (send_keyboard_next) {
+        send_keyboard_next = false;
+        return tud_hid_keyboard_report(KBMOUSE_REPORT_ID_KEYBOARD,
+                                       kbmouse_kb_report.modifier,
+                                       kbmouse_kb_report.keycode);
+    } else {
+        send_keyboard_next = true;
+        return tud_hid_mouse_report(KBMOUSE_REPORT_ID_MOUSE,
+                                    kbmouse_mouse_report.buttons,
+                                    kbmouse_mouse_report.x,
+                                    kbmouse_mouse_report.y,
+                                    kbmouse_mouse_report.wheel,
+                                    kbmouse_mouse_report.pan);
+    }
+}
+
+#if CFG_TUD_GC_ADAPTER
+// Send GC Adapter report (GameCube Adapter for Wii U/Switch mode)
+// Supports up to 4 controllers, maps player_index to port
+static bool usbd_send_gc_adapter_report(uint8_t player_index)
+{
+    if (!tud_hid_ready()) {
+        return false;
+    }
+
+    // Check for pending event (event-driven from tap callback)
+    if (player_index >= USB_MAX_PLAYERS || !pending_flags[player_index]) {
+        return false;
+    }
+
+    const input_event_t* event = &pending_events[player_index];
+    pending_flags[player_index] = false;  // Clear after consumption
+
+    // Apply profile (combos, button remaps)
+    profile_output_t profile_out;
+    uint32_t buttons = apply_usbd_profile(event, &profile_out);
+
+    // Map to port (player 0-3 maps to port 0-3)
+    uint8_t port = player_index;
+    if (port >= 4) port = 0;
+
+    // Mark port as connected with wired controller
+    gc_adapter_report.port[port].connected = GC_ADAPTER_PORT_WIRED >> 4;
+    gc_adapter_report.port[port].type = GC_ADAPTER_TYPE_NORMAL;
+
+    // Map buttons to GC adapter format
+    gc_adapter_report.port[port].a = (buttons & JP_BUTTON_B2) ? 1 : 0;  // GC A = B2
+    gc_adapter_report.port[port].b = (buttons & JP_BUTTON_B1) ? 1 : 0;  // GC B = B1
+    gc_adapter_report.port[port].x = (buttons & JP_BUTTON_B4) ? 1 : 0;  // GC X = B4
+    gc_adapter_report.port[port].y = (buttons & JP_BUTTON_B3) ? 1 : 0;  // GC Y = B3
+
+    gc_adapter_report.port[port].z = (buttons & JP_BUTTON_R1) ? 1 : 0;  // GC Z = R1
+    gc_adapter_report.port[port].l = (buttons & JP_BUTTON_L2) ? 1 : 0;  // GC L = L2
+    gc_adapter_report.port[port].r = (buttons & JP_BUTTON_R2) ? 1 : 0;  // GC R = R2
+    gc_adapter_report.port[port].start = (buttons & JP_BUTTON_S2) ? 1 : 0;
+
+    gc_adapter_report.port[port].dpad_up = (buttons & JP_BUTTON_DU) ? 1 : 0;
+    gc_adapter_report.port[port].dpad_down = (buttons & JP_BUTTON_DD) ? 1 : 0;
+    gc_adapter_report.port[port].dpad_left = (buttons & JP_BUTTON_DL) ? 1 : 0;
+    gc_adapter_report.port[port].dpad_right = (buttons & JP_BUTTON_DR) ? 1 : 0;
+
+    // Analog sticks (GC uses 0-255 with 128 center, Y inverted from HID)
+    // GC: 0=down, 255=up (inverted from standard HID)
+    gc_adapter_report.port[port].stick_x = profile_out.left_x;
+    gc_adapter_report.port[port].stick_y = 255 - profile_out.left_y;  // Invert Y
+    gc_adapter_report.port[port].cstick_x = profile_out.right_x;
+    gc_adapter_report.port[port].cstick_y = 255 - profile_out.right_y;  // Invert Y
+
+    // Analog triggers (0-255)
+    gc_adapter_report.port[port].trigger_l = profile_out.l2_analog;
+    gc_adapter_report.port[port].trigger_r = profile_out.r2_analog;
+
+    // Fall back to digital if analog is 0 but button pressed
+    if (gc_adapter_report.port[port].trigger_l == 0 && (buttons & JP_BUTTON_L2))
+        gc_adapter_report.port[port].trigger_l = 0xFF;
+    if (gc_adapter_report.port[port].trigger_r == 0 && (buttons & JP_BUTTON_R2))
+        gc_adapter_report.port[port].trigger_r = 0xFF;
+
+    // Send via HID with report ID 0x21 - tud_hid_report prepends report_id to data
+    // So we send 36 bytes of port data, and TinyUSB adds the 0x21 prefix = 37 bytes total
+    return tud_hid_report(GC_ADAPTER_REPORT_ID_INPUT, gc_adapter_report.port, sizeof(gc_adapter_report.port));
+}
+#endif
+
 bool usbd_send_report(uint8_t player_index)
 {
     switch (output_mode) {
@@ -1284,6 +1467,12 @@ bool usbd_send_report(uint8_t player_index)
             return usbd_send_xbone_report(player_index);
         case USB_OUTPUT_MODE_XAC:
             return usbd_send_xac_report(player_index);
+        case USB_OUTPUT_MODE_KEYBOARD_MOUSE:
+            return usbd_send_kbmouse_report(player_index);
+#if CFG_TUD_GC_ADAPTER
+        case USB_OUTPUT_MODE_GC_ADAPTER:
+            return usbd_send_gc_adapter_report(player_index);
+#endif
         case USB_OUTPUT_MODE_HID:
         default:
             return usbd_send_hid_report(player_index);
@@ -1317,6 +1506,15 @@ static uint8_t usbd_get_rumble(void)
             return (ps4_output.motor_left > ps4_output.motor_right)
                    ? ps4_output.motor_left : ps4_output.motor_right;
         }
+#if CFG_TUD_GC_ADAPTER
+        case USB_OUTPUT_MODE_GC_ADAPTER: {
+            // GC adapter has binary rumble per port - check if any port has rumble
+            for (int i = 0; i < 4; i++) {
+                if (gc_adapter_rumble.rumble[i]) return 0xFF;
+            }
+            return 0;
+        }
+#endif
         default:
             // HID/Switch modes: no standard rumble protocol
             return 0;
@@ -1485,6 +1683,10 @@ uint8_t const *tud_descriptor_device_cb(void)
             return (uint8_t const *)&xbone_device_descriptor;
         case USB_OUTPUT_MODE_XAC:
             return (uint8_t const *)&xac_device_descriptor;
+        case USB_OUTPUT_MODE_KEYBOARD_MOUSE:
+            return (uint8_t const *)&kbmouse_device_descriptor;
+        case USB_OUTPUT_MODE_GC_ADAPTER:
+            return (uint8_t const *)&gc_adapter_device_descriptor;
         case USB_OUTPUT_MODE_HID:
         default:
             return (uint8_t const *)&desc_device_hid;
@@ -1504,6 +1706,27 @@ static const uint8_t desc_configuration_hid[] = {
 
     // Interface 0: HID gamepad
     TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_NONE, sizeof(hid_report_descriptor), EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 1),
+
+#if CFG_TUD_CDC >= 1
+    // CDC 0: Data port (commands, config)
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_0, 4, EPNUM_CDC_0_NOTIF, 8, EPNUM_CDC_0_OUT, EPNUM_CDC_0_IN, 64),
+#endif
+
+#if CFG_TUD_CDC >= 2
+    // CDC 1: Debug port (logging)
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_1, 5, EPNUM_CDC_1_NOTIF, 8, EPNUM_CDC_1_OUT, EPNUM_CDC_1_IN, 64),
+#endif
+};
+
+// KB/Mouse mode configuration descriptor (HID keyboard+mouse + CDC)
+#define CONFIG_TOTAL_LEN_KBMOUSE (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + (CFG_TUD_CDC * TUD_CDC_DESC_LEN))
+
+static const uint8_t desc_configuration_kbmouse[] = {
+    // Config: bus powered, max 100mA
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN_KBMOUSE, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+
+    // Interface 0: HID keyboard+mouse composite
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_NONE, sizeof(kbmouse_report_descriptor), EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 1),
 
 #if CFG_TUD_CDC >= 1
     // CDC 0: Data port (commands, config)
@@ -1536,6 +1759,10 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
             return xbone_config_descriptor;
         case USB_OUTPUT_MODE_XAC:
             return xac_config_descriptor;
+        case USB_OUTPUT_MODE_KEYBOARD_MOUSE:
+            return desc_configuration_kbmouse;
+        case USB_OUTPUT_MODE_GC_ADAPTER:
+            return gc_adapter_config_descriptor;
         case USB_OUTPUT_MODE_HID:
         default:
             return desc_configuration_hid;
@@ -1629,6 +1856,10 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
                 str = PS4_MANUFACTURER;
             } else if (output_mode == USB_OUTPUT_MODE_XAC) {
                 str = XAC_MANUFACTURER;
+            } else if (output_mode == USB_OUTPUT_MODE_KEYBOARD_MOUSE) {
+                str = USB_KBMOUSE_MANUFACTURER;
+            } else if (output_mode == USB_OUTPUT_MODE_GC_ADAPTER) {
+                str = GC_ADAPTER_MANUFACTURER;
             } else {
                 str = USB_HID_MANUFACTURER;
             }
@@ -1647,6 +1878,10 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
                 str = PS4_PRODUCT;
             } else if (output_mode == USB_OUTPUT_MODE_XAC) {
                 str = XAC_PRODUCT;
+            } else if (output_mode == USB_OUTPUT_MODE_KEYBOARD_MOUSE) {
+                str = USB_KBMOUSE_PRODUCT;
+            } else if (output_mode == USB_OUTPUT_MODE_GC_ADAPTER) {
+                str = GC_ADAPTER_PRODUCT;
             } else {
                 str = USB_HID_PRODUCT;
             }
@@ -1701,6 +1936,14 @@ uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf)
     if (output_mode == USB_OUTPUT_MODE_XAC) {
         return xac_report_descriptor;
     }
+    if (output_mode == USB_OUTPUT_MODE_KEYBOARD_MOUSE) {
+        return kbmouse_report_descriptor;
+    }
+#if CFG_TUD_GC_ADAPTER
+    if (output_mode == USB_OUTPUT_MODE_GC_ADAPTER) {
+        return gc_adapter_report_descriptor;
+    }
+#endif
     return hid_report_descriptor;
 }
 
@@ -1821,6 +2064,13 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     (void)itf;
     (void)report_type;
 
+    // Keyboard LED output report (KB/Mouse mode)
+    // Report ID 1 is keyboard, LED status is 1 byte (bit 0=NumLock, bit 1=CapsLock, bit 2=ScrollLock)
+    if (output_mode == USB_OUTPUT_MODE_KEYBOARD_MOUSE && report_id == KBMOUSE_REPORT_ID_KEYBOARD && bufsize >= 1) {
+        kbmouse_set_led_state(buffer[0]);
+        return;
+    }
+
     // PS3 output report (rumble/LED)
     // Note: Some hosts (like WebHID) may include report ID in buffer, some don't
     // Check if buffer starts with report ID 0x01 and skip it if so
@@ -1847,6 +2097,22 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         ps4_output_available = true;
         return;
     }
+
+#if CFG_TUD_GC_ADAPTER
+    // GC Adapter rumble output - Report ID 0x11 (4 bytes: one per port)
+    if (output_mode == USB_OUTPUT_MODE_GC_ADAPTER && report_id == GC_ADAPTER_REPORT_ID_RUMBLE && bufsize >= 4) {
+        gc_adapter_rumble.report_id = GC_ADAPTER_REPORT_ID_RUMBLE;
+        memcpy(gc_adapter_rumble.rumble, buffer, 4);
+        gc_adapter_rumble_available = true;
+        return;
+    }
+
+    // GC Adapter init command - Report ID 0x13 (no data, just ack)
+    if (output_mode == USB_OUTPUT_MODE_GC_ADAPTER && report_id == GC_ADAPTER_REPORT_ID_INIT) {
+        // Init command received - adapter is now active
+        return;
+    }
+#endif
 
     // PS4 auth feature reports
 #ifndef DISABLE_USB_HOST
@@ -1898,6 +2164,8 @@ usbd_class_driver_t const* usbd_app_driver_get_cb(uint8_t* driver_count)
         case USB_OUTPUT_MODE_XBONE:
             *driver_count = 1;
             return tud_xbone_class_driver();
+
+        // GC_ADAPTER uses built-in HID class driver, no custom driver needed
 
         default:
             // HID/Switch modes use built-in HID class driver

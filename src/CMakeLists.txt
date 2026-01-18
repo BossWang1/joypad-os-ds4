@@ -196,6 +196,7 @@ set(USB_DEVICE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/tud_xinput.c
     ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/tud_xbone.c
     ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/xgip_protocol.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/kbmouse/kbmouse.c
 )
 
 # SNES host sources
