@@ -237,16 +237,10 @@ static void gc_adapter_mode_init(void)
     memset(&gc_adapter_report, 0, sizeof(gc_adapter_in_report_t));
     gc_adapter_report.report_id = GC_ADAPTER_REPORT_ID_INPUT;
 
-    // Set status bytes like HOJA does:
-    // Port 0: 0x14 = controller connected + gray USB mode
-    // Ports 1-3: 0x04 = gray USB mode, no controller
-    // Cast to uint8_t* to write status byte directly (ignoring bitfield layout)
-    ((uint8_t*)&gc_adapter_report.port[0])[0] = GC_ADAPTER_STATUS_CONNECTED;  // 0x14
-    ((uint8_t*)&gc_adapter_report.port[1])[0] = GC_ADAPTER_STATUS_USB_ONLY;   // 0x04
-    ((uint8_t*)&gc_adapter_report.port[2])[0] = GC_ADAPTER_STATUS_USB_ONLY;   // 0x04
-    ((uint8_t*)&gc_adapter_report.port[3])[0] = GC_ADAPTER_STATUS_USB_ONLY;   // 0x04
-
+    // Initialize all ports with rumble available but no controller
+    // Ports are marked CONNECTED (0x14) when they receive input
     for (int i = 0; i < 4; i++) {
+        gc_adapter_report.port[i].status = GC_ADAPTER_STATUS_RUMBLE;
         gc_adapter_report.port[i].stick_x = 128;
         gc_adapter_report.port[i].stick_y = 128;
         gc_adapter_report.port[i].cstick_x = 128;
@@ -275,9 +269,8 @@ static bool gc_adapter_mode_send_report(uint8_t player_index,
     uint8_t port = player_index;
     if (port >= 4) port = 0;
 
-    // Mark port as connected (use HOJA's status byte format)
-    // Status byte is set in init, no need to change it here
-    // Status 0x14 = controller connected + gray USB mode
+    // Mark this port as connected (0x14 = controller connected + rumble power)
+    gc_adapter_report.port[port].status = GC_ADAPTER_STATUS_CONNECTED;
 
     // Map buttons
     gc_adapter_report.port[port].a = (buttons & JP_BUTTON_B2) ? 1 : 0;

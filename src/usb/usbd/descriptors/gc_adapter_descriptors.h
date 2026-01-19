@@ -33,13 +33,16 @@
 #define GC_ADAPTER_REPORT_ID_INIT    0x13  // Init command from host (1 byte)
 #define GC_ADAPTER_REPORT_ID_INPUT   0x21  // Controller input report (37 bytes)
 
-// Port status byte (bitmask, not nibbles!)
-// Based on HOJA's working implementation:
-// - Bit 2 (0x04): Gray USB connected (both USBs plugged in)
+// Port status byte (bitmask)
+// Real adapter has 2 USB cables: black (data) + gray (rumble power)
+// - Bit 2 (0x04): Rumble available (gray USB connected on real hardware)
 // - Bit 4 (0x10): Controller connected to this port
-#define GC_ADAPTER_STATUS_NONE          0x00  // No USB, no controller
-#define GC_ADAPTER_STATUS_USB_ONLY      0x04  // Gray USB mode, no controller
-#define GC_ADAPTER_STATUS_CONNECTED     0x14  // Gray USB + controller connected
+#define GC_ADAPTER_STATUS_RUMBLE        0x04  // Rumble available
+#define GC_ADAPTER_STATUS_CONTROLLER    0x10  // Controller connected
+
+// Combined status values
+#define GC_ADAPTER_STATUS_NONE          0x00  // No controller, no rumble
+#define GC_ADAPTER_STATUS_CONNECTED     (GC_ADAPTER_STATUS_CONTROLLER | GC_ADAPTER_STATUS_RUMBLE)  // 0x14
 
 // Legacy defines (kept for compatibility but not used in new format)
 #define GC_ADAPTER_PORT_NONE         0x00
@@ -58,11 +61,10 @@
 
 // Per-port input report (9 bytes)
 typedef struct __attribute__((packed)) {
-    // Byte 0: Connection status (upper nibble) + Controller type (lower nibble)
-    struct {
-        uint8_t type : 4;       // 0=none, 1=normal, 2=wavebird
-        uint8_t connected : 4;  // 0=none, 1=wired, 2=wireless
-    };
+    // Byte 0: Status bitmask (see GC_ADAPTER_STATUS_* defines)
+    // - Bit 2 (0x04): Gray USB connected
+    // - Bit 4 (0x10): Controller connected to this port
+    uint8_t status;
 
     // Byte 1: Buttons (A, B, X, Y, D-pad)
     struct {
@@ -76,13 +78,14 @@ typedef struct __attribute__((packed)) {
         uint8_t dpad_up : 1;
     };
 
-    // Byte 2: Buttons (Start, Z, R, L) + padding
+    // Byte 2: Buttons (Start, Z, R, L)
+    // Bits 4-7 are unused in original GC protocol
     struct {
         uint8_t start : 1;
         uint8_t z : 1;
         uint8_t r : 1;
         uint8_t l : 1;
-        uint8_t : 4;  // Unused padding
+        uint8_t : 4;          // Reserved (bits 4-7)
     };
 
     // Bytes 3-8: Analog axes
@@ -116,13 +119,17 @@ _Static_assert(sizeof(gc_adapter_out_report_t) == 5, "gc_adapter_out_report_t mu
 // GC ADAPTER HID REPORT DESCRIPTOR
 // ============================================================================
 
-// HID Report Descriptor for GC Adapter - Matches HOJA's working descriptor exactly
+// HID Report Descriptor for GC Adapter
+// Describes full 4-port input report (36 bytes) for Web HID compatibility
+// Each port: 1 status + 2 buttons + 6 analog = 9 bytes × 4 ports = 36 bytes
 static const uint8_t gc_adapter_report_descriptor[] = {
     0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
     0x09, 0x05,        // Usage (Game Pad)
     0xA1, 0x01,        // Collection (Application)
+
+    // Report ID 0x11: Rumble Output (5 bytes: report_id + 4 port rumble states)
     0xA1, 0x03,        //   Collection (Report)
-    0x85, 0x11,        //     Report ID (17) - Rumble output
+    0x85, 0x11,        //     Report ID (17)
     0x19, 0x00,        //     Usage Minimum (Undefined)
     0x2A, 0xFF, 0x00,  //     Usage Maximum (0xFF)
     0x15, 0x00,        //     Logical Minimum (0)
@@ -131,37 +138,23 @@ static const uint8_t gc_adapter_report_descriptor[] = {
     0x95, 0x05,        //     Report Count (5)
     0x91, 0x00,        //     Output (Data,Array,Abs)
     0xC0,              //   End Collection
+
+    // Report ID 0x21: Input Report (36 bytes: 4 ports × 9 bytes each)
+    // Per-port format: [status] [buttons_lo] [buttons_hi] [lx] [ly] [rx] [ry] [lt] [rt]
     0xA1, 0x03,        //   Collection (Report)
-    0x85, 0x21,        //     Report ID (33) - Input report
-    0x05, 0x00,        //     Usage Page (Undefined)
+    0x85, 0x21,        //     Report ID (33)
+    0x06, 0x00, 0xFF,  //     Usage Page (Vendor Defined 0xFF00)
+    0x09, 0x01,        //     Usage (Vendor Usage 1)
     0x15, 0x00,        //     Logical Minimum (0)
-    0x25, 0xFF,        //     Logical Maximum (-1)
+    0x26, 0xFF, 0x00,  //     Logical Maximum (255)
     0x75, 0x08,        //     Report Size (8)
-    0x95, 0x01,        //     Report Count (1)
-    0x81, 0x02,        //     Input (Data,Var,Abs)
-    0x05, 0x09,        //     Usage Page (Button)
-    0x19, 0x01,        //     Usage Minimum (0x01)
-    0x29, 0x08,        //     Usage Maximum (0x08)
-    0x15, 0x00,        //     Logical Minimum (0)
-    0x25, 0x01,        //     Logical Maximum (1)
-    0x75, 0x08,        //     Report Size (8)
-    0x95, 0x02,        //     Report Count (2)
-    0x81, 0x02,        //     Input (Data,Var,Abs)
-    0x05, 0x01,        //     Usage Page (Generic Desktop Ctrls)
-    0x09, 0x30,        //     Usage (X)
-    0x09, 0x31,        //     Usage (Y)
-    0x09, 0x32,        //     Usage (Z)
-    0x09, 0x33,        //     Usage (Rx)
-    0x09, 0x34,        //     Usage (Ry)
-    0x09, 0x35,        //     Usage (Rz)
-    0x15, 0x81,        //     Logical Minimum (-127)
-    0x25, 0x7F,        //     Logical Maximum (127)
-    0x75, 0x08,        //     Report Size (8)
-    0x95, 0x06,        //     Report Count (6)
+    0x95, 0x24,        //     Report Count (36) - 4 ports × 9 bytes
     0x81, 0x02,        //     Input (Data,Var,Abs)
     0xC0,              //   End Collection
+
+    // Report ID 0x13: Init Command (1 byte: just report_id)
     0xA1, 0x03,        //   Collection (Report)
-    0x85, 0x13,        //     Report ID (19) - Init command
+    0x85, 0x13,        //     Report ID (19)
     0x19, 0x00,        //     Usage Minimum (Undefined)
     0x2A, 0xFF, 0x00,  //     Usage Maximum (0xFF)
     0x15, 0x00,        //     Logical Minimum (0)
@@ -170,6 +163,7 @@ static const uint8_t gc_adapter_report_descriptor[] = {
     0x95, 0x01,        //     Report Count (1)
     0x91, 0x00,        //     Output (Data,Array,Abs)
     0xC0,              //   End Collection
+
     0xC0,              // End Collection
 };
 
