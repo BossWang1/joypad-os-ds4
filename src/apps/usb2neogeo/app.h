@@ -21,30 +21,32 @@
 
 // Input drivers
 #define REQUIRE_USB_HOST 1
-#define MAX_USB_DEVICES 6              // Support up to 6 USB devices
+#define MAX_USB_DEVICES 1              // Support up to 1 USB devices
 
 // Output drivers
 #define REQUIRE_NATIVE_NEOGEO_OUTPUT 1
 #define NEOGEO_OUTPUT_PORTS 1        // NEOGEO adapter support 1 player
 
 // Services
+#define REQUIRE_FLASH_SETTINGS 1
+#define REQUIRE_PROFILE_SYSTEM 1
 #define REQUIRE_PLAYER_MANAGEMENT 1
 
 // ============================================================================
 // ROUTING CONFIGURATION
 // ============================================================================
-#define ROUTING_MODE ROUTING_MODE_SIMPLE   // Simple 1:1 routing (USB → NEOGEO+ adapter)
+#define ROUTING_MODE ROUTING_MODE_SIMPLE // Simple 1:1 routing (USB → NEOGEO)
 #define MERGE_MODE MERGE_ALL
-#define MAX_ROUTES 5
+#define MAX_ROUTES 1
 
 // Input transformations - NONE for NEOGEO
-#define TRANSFORM_FLAGS 0
+#define TRANSFORM_FLAGS (TRANSFORM_NONE)  // No transformations needed
 
 // ============================================================================
 // PLAYER MANAGEMENT
 // ============================================================================
-#define PLAYER_SLOT_MODE PLAYER_SLOT_SHIFT // NEOGEO: shift players on disconnect
-#define MAX_PLAYER_SLOTS 1                 // NEOGEO adapter support 1 player
+#define PLAYER_SLOT_MODE PLAYER_SLOT_SHIFT  // NEOGEO: shift players on disconnect (single player)
+#define MAX_PLAYER_SLOTS 1                  // NEOGEO adapter is single player
 #define AUTO_ASSIGN_ON_PRESS 1
 
 // ============================================================================
@@ -57,8 +59,7 @@
 // ============================================================================
 // APP FEATURES
 // ============================================================================
-#define FEATURE_MOUSE_SUPPORT 0         // Mouse-to-analog
-#define FEATURE_MULTITAP 0              // 1 player support
+#define FEATURE_PROFILES 1              // NEOGEO profile system
 
 // ============================================================================
 // APP INTERFACE (OS calls these)

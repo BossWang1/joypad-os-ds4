@@ -25,12 +25,12 @@
 #define NEOGEO_BUTTON_DR       JP_BUTTON_DR  // D-pad Right
 
 // NEOGEO+ 6 buttons
-#define NEOGEO_BUTTON_B1       JP_BUTTON_B3  // B1 (A)
-#define NEOGEO_BUTTON_B2       JP_BUTTON_B4  // B2 (B)
-#define NEOGEO_BUTTON_B3       JP_BUTTON_R1  // B3 (C)
-#define NEOGEO_BUTTON_B4       JP_BUTTON_B1  // B4 (D)
-#define NEOGEO_BUTTON_B5       JP_BUTTON_B2  // B5 (Select)
-#define NEOGEO_BUTTON_B6       JP_BUTTON_R2  // B6
+#define NEOGEO_BUTTON_B1       JP_BUTTON_B3  // P1/A
+#define NEOGEO_BUTTON_B2       JP_BUTTON_B4  // P2/B
+#define NEOGEO_BUTTON_B3       JP_BUTTON_R1  // P3/C
+#define NEOGEO_BUTTON_B4       JP_BUTTON_B1  // K1/D
+#define NEOGEO_BUTTON_B5       JP_BUTTON_B2  // K2/Select
+#define NEOGEO_BUTTON_B6       JP_BUTTON_R2  // K3
 
 // System buttons
 #define NEOGEO_BUTTON_COIN     JP_BUTTON_S1  // Coin

@@ -5,13 +5,26 @@
 // The firmware calls app_init() after core system initialization.
 
 #include "app.h"
+#include "profiles.h"
 #include "core/router/router.h"
 #include "core/services/players/manager.h"
+#include "core/services/profiles/profile.h"
 #include "core/input_interface.h"
 #include "core/output_interface.h"
 #include "native/device/neogeo/neogeo_device.h"
 #include "usb/usbh/usbh.h"
 #include <stdio.h>
+
+// ============================================================================
+// APP PROFILE CONFIGURATION
+// ============================================================================
+
+static const profile_config_t app_profile_config = {
+    .output_profiles = {
+        [OUTPUT_TARGET_NEOGEO] = &neogeo_profile_set,
+    },
+    .shared_profiles = NULL,
+};
 
 // ============================================================================
 // APP INPUT INTERFACES
@@ -75,9 +88,17 @@ void app_init(void)
     };
     players_init_with_config(&player_cfg);
 
+    // Initialize profile system with app-defined profiles
+    profile_init(&app_profile_config);
+
+    uint8_t profile_count = profile_get_count(OUTPUT_TARGET_NEOGEO);
+    const char* active_name = profile_get_name(OUTPUT_TARGET_NEOGEO,
+                                                profile_get_active_index(OUTPUT_TARGET_NEOGEO));
+
     printf("[app:usb2neogeo] Initialization complete\n");
     printf("[app:usb2neogeo]   Routing: %s\n", "SIMPLE (USB → NEOGEO+ adapter 1:1)");
     printf("[app:usb2neogeo]   Player slots: %d (SHIFT mode - players shift on disconnect)\n", MAX_PLAYER_SLOTS);
+    printf("[app:usb2neogeo]   Profiles: %d (active: %s)\n", profile_count, active_name ? active_name : "none");
 }
 
 // ============================================================================

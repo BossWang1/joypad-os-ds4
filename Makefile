@@ -371,7 +371,7 @@ loopy:
 	@echo ""
 
 .PHONY: neogeo
-pce:
+neogeo:
 	@echo "$(YELLOW)Building NEOGEO (KB2040)...$(NC)"
 	@cd src && rm -rf build && sh $(BOARD_SCRIPT_kb2040)
 	@cd src/build && $(MAKE) --no-print-directory $(CONSOLE_neogeo) -j$(JOBS)
