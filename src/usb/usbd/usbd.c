@@ -1726,7 +1726,9 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize)
 {
     (void)itf;
-    (void)report_type;
+
+    printf("[usbd] set_report_cb: report_id=%d type=%d len=%d mode=%d\n",
+           report_id, report_type, bufsize, output_mode);
 
     // Keyboard LED output report (KB/Mouse mode) - delegate to mode interface
     if (output_mode == USB_OUTPUT_MODE_KEYBOARD_MOUSE) {
@@ -1757,6 +1759,15 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
             ps4_mode_set_feature_report(report_id, buffer, bufsize);
         }
         return;
+    }
+
+    // SInput output report: delegate to mode interface (rumble, LEDs)
+    if (output_mode == USB_OUTPUT_MODE_SINPUT) {
+        const usbd_mode_t* mode = usbd_modes[USB_OUTPUT_MODE_SINPUT];
+        if (mode && mode->handle_output) {
+            mode->handle_output(report_id, buffer, bufsize);
+            return;
+        }
     }
 
 #if CFG_TUD_GC_ADAPTER

@@ -14,6 +14,7 @@
 #include "usb/usbd/usbd.h"
 #include "wifi/jocp/jocp.h"
 #include "wifi/jocp/wifi_transport.h"
+#include "wifi/ble_beacon.h"
 
 #include "tusb.h"
 #include "pico/stdlib.h"
@@ -189,6 +190,16 @@ void app_init(void)
     };
     wifi_transport_init(&wifi_cfg);
 
+    // Initialize BLE beacon for iOS app discovery
+    // Broadcasts SSID via BLE so iOS can find and connect to this dongle
+    printf("[app:wifi2usb] Initializing BLE beacon...\n");
+    if (ble_beacon_init(wifi_transport_get_ssid())) {
+        ble_beacon_start();
+        printf("[app:wifi2usb] BLE beacon advertising: %s\n", wifi_transport_get_ssid());
+    } else {
+        printf("[app:wifi2usb] WARNING: BLE beacon init failed\n");
+    }
+
     printf("[app:wifi2usb] Initialization complete\n");
     printf("[app:wifi2usb]   Routing: WiFi -> USB Device (SInput)\n");
     printf("[app:wifi2usb]   Player slots: %d\n", MAX_PLAYER_SLOTS);
@@ -210,6 +221,9 @@ void app_task(void)
 
     // Process WiFi transport (CYW43 poll + JOCP packet handling)
     wifi_transport_task();
+
+    // Process BLE beacon
+    ble_beacon_task();
 
     // Update LED status
     led_status_update();

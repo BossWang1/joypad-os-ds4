@@ -681,8 +681,9 @@ if (PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w")
         DISABLE_USB_HOST=1
         USE_BOOTSEL_BUTTON=1
         CYW43_LWIP=1
-        # WiFi AP mode, no Bluetooth
+        # WiFi AP mode + BLE beacon for iOS discovery
         PICO_CYW43_ARCH_POLL=1
+        BTSTACK_USE_CYW43=1
     )
     target_sources(joypad_wifi2usb PUBLIC
         ${CORE_SOURCES}
@@ -690,17 +691,24 @@ if (PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w")
         ${CMAKE_CURRENT_SOURCE_DIR}/wifi/jocp/jocp_input.c
         ${CMAKE_CURRENT_SOURCE_DIR}/wifi/jocp/wifi_transport.c
         ${CMAKE_CURRENT_SOURCE_DIR}/wifi/jocp/dhcpserver.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/wifi/ble_beacon.c
         ${CMAKE_CURRENT_SOURCE_DIR}/apps/wifi2usb/app.c
     )
     target_include_directories(joypad_wifi2usb PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/apps/wifi2usb
         ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd
         ${CMAKE_CURRENT_SOURCE_DIR}/wifi/jocp
+        ${CMAKE_CURRENT_SOURCE_DIR}/wifi
+        ${CMAKE_CURRENT_SOURCE_DIR}/bt/btstack
     )
     target_link_libraries(joypad_wifi2usb PRIVATE
         pico_stdlib
         pico_multicore
         pico_cyw43_arch_lwip_poll
+        pico_btstack_cyw43
+        pico_btstack_ble
+        pico_btstack_classic
+        pico_btstack_flash_bank
         tinyusb_device
         tinyusb_board
     )

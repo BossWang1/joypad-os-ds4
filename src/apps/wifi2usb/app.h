@@ -24,7 +24,7 @@
 
 // Input drivers - WiFi via JOCP protocol
 #define REQUIRE_WIFI_CYW43 1            // CYW43 WiFi (Pico W built-in)
-#define REQUIRE_BT_CYW43 0              // No Bluetooth needed
+#define REQUIRE_BT_CYW43 1              // BLE beacon for iOS discovery
 #define REQUIRE_USB_HOST 0              // No USB host needed
 #define MAX_USB_DEVICES 0
 
