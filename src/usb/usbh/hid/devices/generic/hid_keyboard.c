@@ -247,6 +247,7 @@ void process_hid_keyboard(uint8_t dev_addr, uint8_t instance, uint8_t const* hid
   bool dpad_left = false, dpad_down = false, dpad_right = false, dpad_up = false;
   bool btns_run = false, btns_sel = false, btns_b2 = false, btns_b1 = false,
        btns_b4 = false, btns_b3 = false, btns_l1 = false, btns_r1 = false,
+       btns_l2 = false, btns_r2 = false, btns_l3 = false, btns_r3 = false,
        btns_a1 = false;
 
   uint32_t hatSwitchKeys = 0x0;
@@ -297,8 +298,12 @@ void process_hid_keyboard(uint8_t dev_addr, uint8_t instance, uint8_t const* hid
       if (report->keycode[i] == HID_KEY_K || report->keycode[i] == HID_KEY_BACKSPACE) btns_b2 = true;
       if (report->keycode[i] == HID_KEY_L) btns_b4 = true;
       if (report->keycode[i] == HID_KEY_SEMICOLON) btns_b3 = true;
-      if (report->keycode[i] == HID_KEY_U || report->keycode[i] == HID_KEY_PAGE_UP) btns_l1 = true;
-      if (report->keycode[i] == HID_KEY_I || report->keycode[i] == HID_KEY_PAGE_DOWN) btns_r1 = true;
+      if (report->keycode[i] == HID_KEY_U || report->keycode[i] == HID_KEY_PAGE_UP) btns_l2 = true;    // L2/LT
+      if (report->keycode[i] == HID_KEY_I || report->keycode[i] == HID_KEY_PAGE_DOWN) btns_r2 = true;  // R2/RT
+      if (report->keycode[i] == HID_KEY_BRACKET_LEFT) btns_l1 = true;   // L1/LB
+      if (report->keycode[i] == HID_KEY_BRACKET_RIGHT) btns_r1 = true;  // R1/RB
+      if (report->keycode[i] == HID_KEY_V) btns_l3 = true;              // L3/LS
+      if (report->keycode[i] == HID_KEY_N) btns_r3 = true;              // R3/RS
       // HAT SWITCH
       switch (report->keycode[i])
       {
@@ -426,11 +431,13 @@ void process_hid_keyboard(uint8_t dev_addr, uint8_t instance, uint8_t const* hid
              ((btns_b4)    ? JP_BUTTON_B4 : 0) |
              ((btns_l1)    ? JP_BUTTON_L1 : 0) |
              ((btns_r1)    ? JP_BUTTON_R1 : 0) |
+             ((btns_l2)    ? JP_BUTTON_L2 : 0) |
+             ((btns_r2)    ? JP_BUTTON_R2 : 0) |
+             ((btns_l3)    ? JP_BUTTON_L3 : 0) |
+             ((btns_r3)    ? JP_BUTTON_R3 : 0) |
              ((btns_sel)   ? JP_BUTTON_S1 : 0) |
              ((btns_run)   ? JP_BUTTON_S2 : 0) |
              ((btns_a1)    ? JP_BUTTON_A1 : 0));
-
-  // TODO: map L2/R2/L3/R3 buttons
 
   input_event_t event = {
     .dev_addr = dev_addr,
@@ -440,7 +447,7 @@ void process_hid_keyboard(uint8_t dev_addr, uint8_t instance, uint8_t const* hid
         .transport = INPUT_TRANSPORT_USB,
         .transport = INPUT_TRANSPORT_USB,
     .buttons = buttons,
-    .button_count = 6,  // Keyboard maps to 6 face buttons (B1-B4, L1, R1)
+    .button_count = 10,  // Keyboard maps to 10 buttons (B1-B4, L1, R1, L2, R2, L3, R3)
     .analog = {analog_left_x, analog_left_y, analog_right_x, analog_right_y, analog_l, analog_r},
     .keys = reportKeys
   };
