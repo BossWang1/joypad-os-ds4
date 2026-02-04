@@ -32,6 +32,5 @@
 void neogeo_init(void);
 void neogeo_task(void);
 void __not_in_flash_func(core1_task)(void);
-void __not_in_flash_func(update_output)(void);
 
 #endif // NEOGEO_DEVICE_H

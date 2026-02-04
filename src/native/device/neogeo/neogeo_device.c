@@ -55,67 +55,32 @@ static const char* neogeo_get_profile_name(uint8_t index) {
     return profile_get_name(OUTPUT_TARGET_NEOGEO, index);
 }
 
-// init for NEOGEO communication
-void neogeo_init()
+// ============================================================================
+// PUSH-BASED OUTPUT VIA ROUTER TAP
+// ============================================================================
+// GPIO updates happen immediately when input arrives via router tap callback,
+// eliminating the one-loop-iteration polling delay. The tap fires from within
+// router_submit_input() on the same iteration input is received.
+
+// Last raw button state from tap — used by task loop for combo detection
+static uint32_t tap_last_buttons = 0;
+static bool tap_has_update = false;
+
+// Tap callback — fires immediately from router_submit_input().
+// Must be fast: just apply profile + update GPIO. No printf or blocking.
+static void __not_in_flash_func(neogeo_tap_callback)(output_target_t output,
+                                                      uint8_t player_index,
+                                                      const input_event_t* event)
 {
-  // Set output pins HIGH immediately to prevent "all buttons pressed" during boot
-  gpio_init_mask(NEOGEO_GPIO_MASK);
-  gpio_set_dir_out_masked(NEOGEO_GPIO_MASK);
-  gpio_put_masked(NEOGEO_GPIO_MASK, NEOGEO_GPIO_MASK);
-  
-  profile_indicator_disable_rumble();
-  profile_set_player_count_callback(neogeo_get_player_count_for_profile);
+  (void)output;
+  (void)player_index;
 
-  #if CFG_TUSB_DEBUG >= 1
-  // Initialize chosen UART
-  uart_init(UART_ID, BAUD_RATE);
+  // Store raw buttons for combo detection in task loop
+  tap_last_buttons = event->buttons;
+  tap_has_update = true;
 
-  // Set the GPIO function for the UART pins
-  gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-  gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
-  #endif
-}
-
-// task process - runs on core0, keeps cached button values fresh
-void neogeo_task()
-{  
-  // Continuously read input
-  update_output();
-}
-
-//
-
-//-----------------------------------------------------------------------------
-// Core1 Entry Point
-//-----------------------------------------------------------------------------
-
-void __not_in_flash_func(core1_task)(void) {
-  while (1) {
-    sleep_ms(100);
-  }
-}
-
-//
-// update_output - reads button state from router and caches it (HEAVY - once per scan)
-//
-void __not_in_flash_func(update_output)(void)
-{
-  static uint32_t last_buttons = 0;  // Remember last button state for combo detection
-  const input_event_t* event = router_get_output(OUTPUT_TARGET_NEOGEO, 0);
-
-  // Update last_buttons when we have new input
-  if (event) {
-    last_buttons = event->buttons;
-  }
-
-  // Always check profile switching combo with last known state
-  // This ensures combo detection works even when controller doesn't send updates while buttons held
-  if (playersCount > 0) {
-    profile_check_switch_combo(last_buttons);
-  }
-  
-  // No new event - keep existing state (important for mouse!)
-  if (!event || playersCount == 0) return;  // No new input to process
+  // Only update GPIO if we have connected players
+  if (playersCount == 0) return;
 
   // Apply profile remapping
   const profile_t* profile = profile_get_active(OUTPUT_TARGET_NEOGEO);
@@ -150,12 +115,73 @@ void __not_in_flash_func(update_output)(void)
   neogeo_buttons |= (mapped.left_y > 192) ? NEOGEO_DD_PIN : 0;  // Dpad Down -> D-DOWN
 
   gpio_put_masked(NEOGEO_GPIO_MASK, ~neogeo_buttons);
-
-  codes_task_for_output(OUTPUT_TARGET_NEOGEO);
 }
 
-// post_input_event removed - replaced by router architecture
-// Input flow: USB drivers → router_submit_input() → router → router_get_output() → update_output()
+// init for NEOGEO communication
+void neogeo_init()
+{
+  // Set output pins HIGH immediately to prevent "all buttons pressed" during boot
+  gpio_init_mask(NEOGEO_GPIO_MASK);
+  gpio_set_dir_out_masked(NEOGEO_GPIO_MASK);
+  gpio_put_masked(NEOGEO_GPIO_MASK, NEOGEO_GPIO_MASK);
+  
+  profile_indicator_disable_rumble();
+  profile_set_player_count_callback(neogeo_get_player_count_for_profile);
+
+  // Register tap for push-based GPIO updates — fires immediately from
+  // router_submit_input() instead of waiting for next task loop iteration
+  router_set_tap(OUTPUT_TARGET_NEOGEO, neogeo_tap_callback);
+
+  #if CFG_TUSB_DEBUG >= 1
+  // Initialize chosen UART
+  uart_init(UART_ID, BAUD_RATE);
+
+  // Set the GPIO function for the UART pins
+  gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
+  gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+  #endif
+}
+
+// Task loop — handles non-latency-critical work (combo detection, cheat codes).
+// GPIO updates are now handled by the tap callback above.
+void neogeo_task()
+{
+  static uint32_t last_buttons = 0;
+  bool had_update = false;
+
+  // Pick up raw button state from tap callback
+  if (tap_has_update) {
+    last_buttons = tap_last_buttons;
+    tap_has_update = false;
+    had_update = true;
+  }
+
+  // Always check profile switching combo with last known state
+  // This ensures combo detection works even when controller doesn't send updates while buttons held
+  if (playersCount > 0) {
+    profile_check_switch_combo(last_buttons);
+  }
+
+  // Run cheat code detection when we had new input
+  if (had_update && playersCount > 0) {
+    codes_task_for_output(OUTPUT_TARGET_NEOGEO);
+  }
+}
+
+//
+
+//-----------------------------------------------------------------------------
+// Core1 Entry Point
+//-----------------------------------------------------------------------------
+
+void __not_in_flash_func(core1_task)(void) {
+  while (1) {
+    sleep_ms(100);
+  }
+}
+
+// Input flow: USB drivers → router_submit_input() → tap callback → GPIO (immediate)
+//             Task loop handles combo detection and cheat codes
 
 // ============================================================================
 // OUTPUT INTERFACE
