@@ -207,21 +207,20 @@ void xinput_task(void)
   uint32_t now = to_ms_since_boot(get_absolute_time());
 
   // Chatpad keepalive for all xinput devices (runs even without player assignment)
-  // This is critical - chatpad goes to sleep without keepalives
-  for (uint8_t dev_addr = 1; dev_addr <= CFG_TUH_DEVICE_MAX; dev_addr++)
-  {
-    for (uint8_t instance = 0; instance < CFG_TUH_XINPUT; instance++)
-    {
-      if (now - chatpad_last_keepalive[dev_addr][instance] >= XINPUT_CHATPAD_KEEPALIVE_MS)
-      {
-        // tuh_xinput_chatpad_keepalive returns false if chatpad not enabled/inited
-        if (tuh_xinput_chatpad_keepalive(dev_addr, instance))
-        {
-          chatpad_last_keepalive[dev_addr][instance] = now;
-        }
-      }
-    }
-  }
+  // TODO: chatpad keepalive disabled until chatpad support is working
+  // for (uint8_t dev_addr = 1; dev_addr <= CFG_TUH_DEVICE_MAX; dev_addr++)
+  // {
+  //   for (uint8_t instance = 0; instance < CFG_TUH_XINPUT; instance++)
+  //   {
+  //     if (now - chatpad_last_keepalive[dev_addr][instance] >= XINPUT_CHATPAD_KEEPALIVE_MS)
+  //     {
+  //       if (tuh_xinput_chatpad_keepalive(dev_addr, instance))
+  //       {
+  //         chatpad_last_keepalive[dev_addr][instance] = now;
+  //       }
+  //     }
+  //   }
+  // }
 
   // Rumble/LED only if controller connected to a player
   if (!playersCount) return;
