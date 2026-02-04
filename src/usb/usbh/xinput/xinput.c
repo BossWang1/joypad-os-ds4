@@ -226,6 +226,15 @@ void xinput_task(void)
   // Rumble/LED only if controller connected to a player
   if (!playersCount) return;
 
+  // Throttle feedback to every 20ms (matches HID device task intervals)
+  static uint32_t last_feedback_ms = 0;
+  if (now - last_feedback_ms < 20) return;
+  last_feedback_ms = now;
+
+  // Track last-sent values per player to avoid redundant USB transfers
+  static uint8_t last_led[4] = {0};
+  static uint8_t last_rumble[4] = {0};
+
   // Update rumble/LED state for each xinput device
   for (int i = 0; i < playersCount; ++i)
   {
@@ -238,10 +247,17 @@ void xinput_task(void)
     // Get per-player feedback state
     feedback_state_t* fb = feedback_get_state(i);
     uint8_t rumble = fb ? (fb->rumble.left > fb->rumble.right ? fb->rumble.left : fb->rumble.right) : 0;
+    uint8_t led = i + 1;
 
-    // TODO: throttle and only fire if device is xinput
-    tuh_xinput_set_led(dev_addr, instance, i+1, true);
-    tuh_xinput_set_rumble(dev_addr, instance, rumble, rumble, true);
+    // Only send if values changed (non-blocking)
+    if (led != last_led[i]) {
+      tuh_xinput_set_led(dev_addr, instance, led, false);
+      last_led[i] = led;
+    }
+    if (rumble != last_rumble[i]) {
+      tuh_xinput_set_rumble(dev_addr, instance, rumble, rumble, false);
+      last_rumble[i] = rumble;
+    }
   }
 }
 
