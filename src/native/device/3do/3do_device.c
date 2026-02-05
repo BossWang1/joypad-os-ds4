@@ -9,6 +9,7 @@
 #include "core/input_event.h"
 #include "core/services/profiles/profile.h"
 #include "core/services/profiles/profile_indicator.h"
+#include "core/services/players/manager.h"
 #include "core/services/leds/leds.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
@@ -715,6 +716,10 @@ static inline void map_usbr_to_3do_joystick(_3do_joystick_report* report, uint32
 // Task Processing
 //-----------------------------------------------------------------------------
 
+// Static for profile combo detection - persists across task calls
+// Updated by update_3do_report() for player 0, read by _3do_task()
+static uint32_t last_p0_buttons = 0;
+
 // task process for 3DO (called from main loop)
 void _3do_task() {
   // Periodic debug logging (safe to printf here, not in IRQ)
@@ -779,10 +784,10 @@ void _3do_task() {
     update_3do_report(i);
   }
 
-  // Check for profile/mode switching combo (delegated to core)
-  const input_event_t* event = router_get_output(OUTPUT_TARGET_3DO, 0);
-  if (event) {
-    profile_check_switch_combo(event->buttons);
+  // Check for profile/mode switching combo
+  // Uses last_p0_buttons captured inside update_3do_report() before profile remapping
+  if (playersCount > 0) {
+    profile_check_switch_combo(last_p0_buttons);
   }
 }
 
@@ -814,6 +819,11 @@ void __not_in_flash_func(update_3do_report)(uint8_t player_index) {
   if (event->type == INPUT_TYPE_NONE) return;
 
   uint32_t buttons = event->buttons;
+
+  // Track player 0 buttons for profile combo detection (uses raw unmapped buttons)
+  if (player_index == 0) {
+    last_p0_buttons = buttons;
+  }
   uint8_t ax = event->analog[ANALOG_LX];   // Left stick X
   uint8_t ay = event->analog[ANALOG_LY];   // Left stick Y
   uint8_t az = event->analog[ANALOG_RX];   // Right stick X
