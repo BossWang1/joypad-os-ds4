@@ -286,6 +286,32 @@ void flash_save_now(const flash_t* settings)
     save_pending = false;
 }
 
+// Force immediate save, ignoring BT-active check (use before device reset)
+void flash_save_force(const flash_t* settings)
+{
+    static flash_t write_settings;
+    memcpy(&write_settings, settings, sizeof(flash_t));
+    write_settings.magic = SETTINGS_MAGIC;
+    write_settings.sequence = ++current_sequence;
+
+    // Find next empty slot
+    int slot = find_empty_slot();
+
+    if (slot < 0) {
+        // Sector full - erase regardless of BT state (we're resetting anyway)
+        printf("[flash] Sector full, forcing erase before reset\n");
+        flash_erase_sector();
+        slot = 0;
+        erase_pending = false;
+    }
+
+    printf("[flash] Force writing to slot %d (seq=%lu)\n",
+           slot, (unsigned long)write_settings.sequence);
+
+    flash_write_page(slot, &write_settings);
+    save_pending = false;
+}
+
 // Task function to handle debounced flash writes (call from main loop)
 void flash_task(void)
 {

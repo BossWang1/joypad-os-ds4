@@ -397,9 +397,9 @@ bool usbd_set_mode(usb_output_mode_t mode)
     printf("[usbd] Setting flash_settings.usb_output_mode = %d\n", mode);
     flush_debug_output();
     flash_settings.usb_output_mode = (uint8_t)mode;
-    printf("[usbd] Calling flash_save_now...\n");
+    printf("[usbd] Calling flash_save_force (reset imminent)...\n");
     flush_debug_output();
-    flash_save_now(&flash_settings);
+    flash_save_force(&flash_settings);
     printf("[usbd] Mode saved to flash (mode=%d)\n", flash_settings.usb_output_mode);
     flush_debug_output();
 

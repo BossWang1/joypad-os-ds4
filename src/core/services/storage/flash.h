@@ -92,6 +92,9 @@ void flash_save(const flash_t* settings);
 // Force immediate save (bypasses debouncing - use sparingly)
 void flash_save_now(const flash_t* settings);
 
+// Force immediate save, ignoring BT-active check (use before device reset)
+void flash_save_force(const flash_t* settings);
+
 // Task function to handle debounced flash writes (call from main loop)
 void flash_task(void);
 
