@@ -48,6 +48,7 @@ jobs:
       - name: Checkout code with submodules
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.JOYBOT_PAT || secrets.GITHUB_TOKEN }}
           submodules: recursive
           fetch-depth: 0
 
@@ -264,7 +265,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ secrets.JOYBOT_PAT }}
 
       - name: Bump version (if requested)
         if: github.event.inputs.bump_version != 'none'
@@ -301,11 +302,11 @@ jobs:
         with:
           commit_message: "Bump version to ${{ steps.bump.outputs.new_version }}"
           file_pattern: VERSION
-          commit_user_name: ${{ github.actor }}
-          commit_user_email: ${{ github.actor }}@users.noreply.github.com
-          commit_author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          commit_user_name: Joybot
+          commit_user_email: joy@joypad.ai
+          commit_author: Joybot <joy@joypad.ai>
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.JOYBOT_PAT }}
 
       - name: Read VERSION file
         id: version
