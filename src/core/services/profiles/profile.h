@@ -97,7 +97,7 @@ typedef enum {
     TRIGGER_PASSTHROUGH = 0,    // Analog value passed through, digital at threshold
     TRIGGER_DIGITAL_ONLY,       // Digital only, no analog output
     TRIGGER_FULL_PRESS,         // Digital + analog forced to 255
-    TRIGGER_LIGHT_PRESS,        // Digital + analog at custom value (l2/r2_analog_value)
+    TRIGGER_LIGHT_PRESS,        // Analog capped at custom value (l2/r2_analog_value), no digital
     TRIGGER_INSTANT,            // Digital triggers immediately (threshold = 1)
     TRIGGER_DISABLED,           // No output
 } trigger_behavior_t;

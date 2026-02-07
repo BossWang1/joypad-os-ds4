@@ -990,10 +990,11 @@ void profile_apply(const profile_t* profile,
                 }
                 break;
             case TRIGGER_LIGHT_PRESS:
-                if (output->buttons & JP_BUTTON_L2) {
+                // Cap analog at custom value (proportional up to cap), no digital
+                if (output->l2_analog > profile->l2_analog_value) {
                     output->l2_analog = profile->l2_analog_value;
-                    output->buttons &= ~JP_BUTTON_L2;  // Analog only, no digital
                 }
+                output->buttons &= ~JP_BUTTON_L2;  // Never produce digital
                 break;
             case TRIGGER_INSTANT:
                 // Analog zeroed, digital handled by threshold logic elsewhere
@@ -1021,10 +1022,11 @@ void profile_apply(const profile_t* profile,
                 }
                 break;
             case TRIGGER_LIGHT_PRESS:
-                if (output->buttons & JP_BUTTON_R2) {
+                // Cap analog at custom value (proportional up to cap), no digital
+                if (output->r2_analog > profile->r2_analog_value) {
                     output->r2_analog = profile->r2_analog_value;
-                    output->buttons &= ~JP_BUTTON_R2;  // Analog only, no digital
                 }
+                output->buttons &= ~JP_BUTTON_R2;  // Never produce digital
                 break;
             case TRIGGER_INSTANT:
                 // Analog zeroed, digital handled by threshold logic elsewhere
