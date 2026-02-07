@@ -63,6 +63,7 @@ void hid_task(void)
       case CONTROLLER_KEYBOARD: // send Keyboard LEDs
       case CONTROLLER_SWITCH: // send Switch Pro init, LED and rumble commands
       case CONTROLLER_SWITCH2: // send Switch 2 Pro init, LED and rumble commands
+      case CONTROLLER_SINPUT: // send SInput rumble, player LED, and RGB LED
         {
           // Get per-player feedback state
           feedback_state_t* fb = (player_index >= 0) ? feedback_get_state(player_index) : NULL;
@@ -174,6 +175,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   case CONTROLLER_DUALSHOCK3:
   case CONTROLLER_SWITCH:
   case CONTROLLER_SWITCH2:
+  case CONTROLLER_SINPUT:
     device_interfaces[dev_type]->init(dev_addr, instance);
     break;
   case CONTROLLER_DUALSHOCK4:
@@ -235,6 +237,7 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance)
   case CONTROLLER_KEYBOARD:
   case CONTROLLER_SWITCH:
   case CONTROLLER_SWITCH2:
+  case CONTROLLER_SINPUT:
     device_interfaces[dev_type]->unmount(dev_addr, instance);
     break;
   default:
