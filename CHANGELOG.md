@@ -8,7 +8,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-*No unreleased changes.*
+### Fixed
+- TRIGGER_LIGHT_PRESS now caps analog proportionally without requiring digital press (PR #68)
+
+### Added
+- usb2neogeo latency test documentation and results (PR #67, community contribution)
+
+### Docs
+- Clarified PCE pinout naming (CLR/OE, code variable mapping)
 
 ---
 
