@@ -69,15 +69,25 @@ static const kbmouse_button_map_t default_button_map[] = {
 // ANALOG PROCESSING
 // ============================================================================
 
-// Apply deadzone and sensitivity curve to analog stick value
-// Returns mouse movement delta (-127 to 127)
-static int8_t process_analog_to_mouse(uint8_t analog, uint8_t deadzone, uint8_t sensitivity)
+// Max mouse pixels per USB poll at default sensitivity (5).
+// At ~125Hz polling: 20 * 125 = 2500 px/sec (crosses 1080p in ~0.8s).
+#define MOUSE_MAX_SPEED 20.0f
+
+// Sub-pixel accumulators for smooth low-speed mouse movement
+static float mouse_accum_x = 0.0f;
+static float mouse_accum_y = 0.0f;
+
+// Apply deadzone, quadratic curve, and sub-pixel accumulation.
+// accumulator persists fractional pixels between polls for smooth movement.
+static int8_t process_analog_to_mouse(uint8_t analog, uint8_t deadzone,
+                                       uint8_t sensitivity, float* accumulator)
 {
     // Center analog value to signed
     int16_t centered = (int16_t)analog - 128;
 
-    // Apply deadzone
+    // Apply deadzone — reset accumulator to prevent drift
     if (abs(centered) < deadzone) {
+        *accumulator = 0.0f;
         return 0;
     }
 
@@ -94,14 +104,14 @@ static int8_t process_analog_to_mouse(uint8_t analog, uint8_t deadzone, uint8_t 
     // Scale by sensitivity (1-10 maps to 0.2-2.0)
     float sens_factor = (float)sensitivity / 5.0f;
 
-    // Calculate final result
-    int16_t result = (int16_t)(curved * 127.0f * sens_factor) * sign;
+    // Accumulate sub-pixel movement
+    *accumulator += curved * MOUSE_MAX_SPEED * sens_factor * sign;
 
-    // Clamp to int8 range
-    if (result > 127) result = 127;
-    if (result < -127) result = -127;
+    // Extract integer pixels, keep fractional remainder
+    int8_t delta = (int8_t)*accumulator;
+    *accumulator -= (float)delta;
 
-    return (int8_t)result;
+    return delta;
 }
 
 // Process analog stick for scroll (right stick)
@@ -148,6 +158,8 @@ void kbmouse_init(void)
     analog_config.sensitivity = KBMOUSE_DEFAULT_SENSITIVITY;
     analog_config.scroll_deadzone = KBMOUSE_DEFAULT_SCROLL_DEADZONE;
     analog_config.scroll_speed = KBMOUSE_DEFAULT_SCROLL_SPEED;
+    mouse_accum_x = 0.0f;
+    mouse_accum_y = 0.0f;
     keyboard_led_state = 0;
 }
 
@@ -198,12 +210,14 @@ void kbmouse_convert(uint32_t buttons,
     mouse_report->x = process_analog_to_mouse(
         profile_out->right_x,
         analog_config.deadzone,
-        analog_config.sensitivity
+        analog_config.sensitivity,
+        &mouse_accum_x
     );
     mouse_report->y = process_analog_to_mouse(
         profile_out->right_y,
         analog_config.deadzone,
-        analog_config.sensitivity
+        analog_config.sensitivity,
+        &mouse_accum_y
     );
 
     // Left stick -> WASD keys (movement)
