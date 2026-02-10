@@ -623,6 +623,26 @@ joypad_target_common(joypad_usb)
 joypad_add_btstack(joypad_usb)
 pico_enable_stdio_uart(joypad_usb 1)
 
+# --- USB to USB (Raspberry Pi Pico) ---
+# PIO USB host on GP16/GP17 (default), standard LED on GP25
+add_executable(joypad_usb_pico)
+target_compile_definitions(joypad_usb_pico PRIVATE
+    CONFIG_USB=1
+    PICO_DEFAULT_PIO_USB_DP_PIN=16
+    BOARD_TUH_RHPORT=1
+    USE_BOOTSEL_BUTTON=1
+)
+target_sources(joypad_usb_pico PUBLIC ${COMMON_SOURCES} ${USB_DEVICE_SOURCES}
+    ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb/app.c
+)
+target_include_directories(joypad_usb_pico PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb
+    ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd
+)
+target_link_libraries(joypad_usb_pico PRIVATE ${COMMON_LIBRARIES} tinyusb_device tinyusb_pico_pio_usb)
+joypad_target_common(joypad_usb_pico)
+joypad_add_btstack(joypad_usb_pico)
+
 # --- USB to USB (RP2040-Zero) ---
 add_executable(joypad_usb_rp2040zero)
 target_compile_definitions(joypad_usb_rp2040zero PRIVATE

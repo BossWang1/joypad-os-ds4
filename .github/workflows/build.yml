@@ -34,6 +34,7 @@ jobs:
           - n642dc_kb2040
           - usb23do_rp2040zero
           - usb2uart_kb2040
+          - usb2usb_pico
           - usb2usb_feather
           - usb2usb_rp2040zero
           - usb2usb_rp2350usba

@@ -1,2 +1,2 @@
 #!/bin/sh
-cmake -G "Unix Makefiles" -DFAMILY=rp2040 -DBOARD=raspberry_pi_pico -B build
+cmake -G "Unix Makefiles" -DFAMILY=rp2040 -DPICO_BOARD=pico -B build
