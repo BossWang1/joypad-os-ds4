@@ -13,6 +13,7 @@
 #include "core/output_interface.h"
 #include "usb/usbd/usbd.h"
 #include "native/host/snes/snes_host.h"
+#include "core/services/leds/leds.h"
 #include <stdio.h>
 
 // ============================================================================
@@ -99,6 +100,16 @@ void app_init(void)
 
 void app_task(void)
 {
+    // Update LED color when USB output mode changes
+    static usb_output_mode_t last_led_mode = USB_OUTPUT_MODE_COUNT;
+    usb_output_mode_t mode = usbd_get_mode();
+    if (mode != last_led_mode) {
+        uint8_t r, g, b;
+        usbd_get_mode_color(mode, &r, &g, &b);
+        leds_set_color(r, g, b);
+        last_led_mode = mode;
+    }
+
     // Forward rumble from USB host to SNES controller
     if (usbd_output_interface.get_feedback) {
         output_feedback_t fb;

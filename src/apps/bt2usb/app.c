@@ -14,6 +14,7 @@
 #include "usb/usbd/usbd.h"
 #include "bt/transport/bt_transport.h"
 #include "bt/btstack/btstack_host.h"
+#include "core/services/leds/leds.h"
 
 #include "tusb.h"
 #include "pico/stdlib.h"
@@ -30,25 +31,32 @@ extern const bt_transport_t bt_transport_cyw43;
 static uint32_t led_last_toggle = 0;
 static bool led_state = false;
 
-// Update LED based on connection status
-// - Slow blink (1Hz): No controllers connected, waiting
-// - Solid on: Controller connected
+// Update LED based on connection/scan status
+// - Slow blink (1Hz): Scanning
+// - Solid on: Device paired, not scanning
+// - Off: No devices, not scanning
 static void led_status_update(void)
 {
     uint32_t now = to_ms_since_boot(get_absolute_time());
 
-    if (playersCount > 0) {
-        // Controller connected - solid on
+    if (btstack_host_is_scanning()) {
+        // Scanning - blink (500ms on/off = 1Hz)
+        if (now - led_last_toggle >= 500) {
+            led_state = !led_state;
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state ? 1 : 0);
+            led_last_toggle = now;
+        }
+    } else if (btstack_classic_get_connection_count() > 0) {
+        // Device connected, not scanning - solid on
         if (!led_state) {
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
             led_state = true;
         }
     } else {
-        // No controllers - slow blink (500ms on/off = 1Hz)
-        if (now - led_last_toggle >= 500) {
-            led_state = !led_state;
-            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state ? 1 : 0);
-            led_last_toggle = now;
+        // No devices, not scanning - off
+        if (led_state) {
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+            led_state = false;
         }
     }
 }
@@ -61,8 +69,9 @@ static void on_button_event(button_event_t event)
 {
     switch (event) {
         case BUTTON_EVENT_CLICK:
-            printf("[app:bt2usb] Button click - current mode: %s\n",
-                   usbd_get_mode_name(usbd_get_mode()));
+            // Start/extend 60-second BT scan for additional devices
+            printf("[app:bt2usb] Starting BT scan (60s)...\n");
+            btstack_host_start_timed_scan(60000);
             break;
 
         case BUTTON_EVENT_DOUBLE_CLICK: {
@@ -87,8 +96,9 @@ static void on_button_event(button_event_t event)
             break;
 
         case BUTTON_EVENT_HOLD:
-            // Long press to clear all Bluetooth bonds
-            printf("[app:bt2usb] Clearing all Bluetooth bonds...\n");
+            // Long press to disconnect all devices and clear all bonds
+            printf("[app:bt2usb] Disconnecting all devices and clearing bonds...\n");
+            btstack_host_disconnect_all_devices();
             btstack_host_delete_all_bonds();
             break;
 
@@ -168,7 +178,8 @@ void app_init(void)
     printf("[app:bt2usb] Initialization complete\n");
     printf("[app:bt2usb]   Routing: Bluetooth -> USB Device (HID Gamepad)\n");
     printf("[app:bt2usb]   Player slots: %d\n", MAX_PLAYER_SLOTS);
-    printf("[app:bt2usb]   Hold BOOTSEL to clear BT bonds\n");
+    printf("[app:bt2usb]   Click BOOTSEL for 60s BT scan\n");
+    printf("[app:bt2usb]   Hold BOOTSEL to disconnect all + clear bonds\n");
     printf("[app:bt2usb]   Double-click BOOTSEL to switch USB mode\n");
 }
 
@@ -181,10 +192,21 @@ void app_task(void)
     // Process button input
     button_task();
 
+    // Update LED color when USB output mode changes
+    static usb_output_mode_t last_led_mode = USB_OUTPUT_MODE_COUNT;
+    usb_output_mode_t mode = usbd_get_mode();
+    if (mode != last_led_mode) {
+        uint8_t r, g, b;
+        usbd_get_mode_color(mode, &r, &g, &b);
+        leds_set_color(r, g, b);
+        last_led_mode = mode;
+    }
+
     // Process Bluetooth transport
     bt_task();
 
     // Update LED status
+    leds_set_connected_devices(btstack_classic_get_connection_count());
     led_status_update();
 
     // Route feedback from USB device output to BT controllers

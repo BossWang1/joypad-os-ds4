@@ -71,6 +71,10 @@ static absolute_time_t state_change_time;
 static uint8_t custom_led_colors[16][3];  // [led_index][R, G, B]
 static bool use_custom_colors = false;
 
+// Override color for mode indication (set via neopixel_set_override_color)
+static uint8_t override_r = 0, override_g = 0, override_b = 0;
+static bool has_override_color = false;
+
 // Timing constants for NeoPixel profile indicator (in microseconds for precision)
 // We count OFF blinks, so OFF time is longer and more noticeable
 #define BLINK_OFF_TIME_US 200000  // 200ms LED off (this is what we count)
@@ -311,6 +315,14 @@ bool neopixel_has_custom_colors(void) {
     return use_custom_colors;
 }
 
+// Set override color for mode indication
+void neopixel_set_override_color(uint8_t r, uint8_t g, uint8_t b) {
+    override_r = r;
+    override_g = g;
+    override_b = b;
+    has_override_color = true;
+}
+
 typedef void (*pattern)(uint len, uint t);
 const struct {
     pattern pat;
@@ -362,9 +374,9 @@ void neopixel_init()
     // Load neopixel program and config state machine to run it.
     uint offset = pio_add_program(pio, &ws2812_program);
     ws2812_program_init(pio, sm, offset, WS2812_PIN, 800000, IS_RGBW);
-    // Initialize all pixels with startup color (orange)
+    // Initialize all pixels off (app_task sets the correct color)
     for (uint i = 0; i < NUM_PIXELS; ++i) {
-        put_pixel(urgb_u32(0x40, 0x20, 0x00));
+        put_pixel(0);
     }
 }
 
@@ -453,6 +465,32 @@ void neopixel_task(int pat)
     if (pat > 5) pat = 5;
     if (pat && codes_is_test_mode()) pat = 6;
     stored_pattern = pat;
+
+    // Override color mode: pulse when idle (pat=0), solid when connected (pat>0)
+    if (has_override_color) {
+        if (absolute_time_diff_us(init_time, current_time) > reset_period) {
+            if (pat == 0) {
+                // Pulse: triangle wave brightness (tic cycles 0-199)
+                int phase = tic % 200;
+                int bright = phase < 100 ? (30 + phase * 2) : (30 + (200 - phase) * 2);
+                // bright ranges 30-230, scale override color
+                for (uint i = 0; i < NUM_PIXELS; ++i) {
+                    put_pixel(urgb_u32(
+                        (override_r * bright) / 255,
+                        (override_g * bright) / 255,
+                        (override_b * bright) / 255));
+                }
+            } else {
+                // Solid: full brightness
+                for (uint i = 0; i < NUM_PIXELS; ++i) {
+                    put_pixel(urgb_u32(override_r, override_g, override_b));
+                }
+            }
+            tic += dir;
+            init_time = get_absolute_time();
+        }
+        return;
+    }
 
     if (absolute_time_diff_us(init_time, current_time) > reset_period) {
         // Use custom colors if set, otherwise use pattern table

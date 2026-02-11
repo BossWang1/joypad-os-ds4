@@ -10,6 +10,7 @@
 #include "core/input_interface.h"
 #include "core/output_interface.h"
 #include "core/services/button/button.h"
+#include "core/services/leds/leds.h"
 #include "core/services/leds/neopixel/ws2812.h"
 #include "core/services/speaker/speaker.h"
 #include "core/services/display/display.h"
@@ -400,6 +401,16 @@ void app_task(void)
 {
     // Process button input for mode switching
     button_task();
+
+    // Update LED color when USB output mode changes
+    static usb_output_mode_t last_led_mode = USB_OUTPUT_MODE_COUNT;
+    usb_output_mode_t mode = usbd_get_mode();
+    if (mode != last_led_mode) {
+        uint8_t r, g, b;
+        usbd_get_mode_color(mode, &r, &g, &b);
+        leds_set_color(r, g, b);
+        last_led_mode = mode;
+    }
 
     // Process codes detection (Konami code, etc.)
     codes_task_for_output(OUTPUT_TARGET_USB_DEVICE);

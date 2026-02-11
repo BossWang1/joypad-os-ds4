@@ -467,6 +467,32 @@ const char* usbd_get_mode_name(usb_output_mode_t mode)
     return "Unknown";
 }
 
+void usbd_get_mode_color(usb_output_mode_t mode, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+    switch (mode) {
+        case USB_OUTPUT_MODE_XINPUT:
+        case USB_OUTPUT_MODE_XBOX_ORIGINAL:
+        case USB_OUTPUT_MODE_XBONE:
+        case USB_OUTPUT_MODE_XAC:
+            *r = 0; *g = 64; *b = 0; break;     // green
+        case USB_OUTPUT_MODE_PS3:
+        case USB_OUTPUT_MODE_PSCLASSIC:
+            *r = 0; *g = 0; *b = 40; break;      // dim blue
+        case USB_OUTPUT_MODE_PS4:
+            *r = 0; *g = 0; *b = 80; break;      // bright blue
+        case USB_OUTPUT_MODE_SWITCH:
+            *r = 64; *g = 0; *b = 0; break;      // red
+        case USB_OUTPUT_MODE_KEYBOARD_MOUSE:
+            *r = 64; *g = 64; *b = 0; break;     // yellow
+        case USB_OUTPUT_MODE_PCEMINI:
+            *r = 0; *g = 0; *b = 64; break;      // blue
+        case USB_OUTPUT_MODE_SINPUT:
+            *r = 32; *g = 32; *b = 32; break;    // white
+        default: // HID, GC_ADAPTER
+            *r = 6; *g = 0; *b = 64; break;      // purple
+    }
+}
+
 usb_output_mode_t usbd_get_next_mode(void)
 {
     // Cycle through common modes: SInput → XInput → PS3 → PS4 → Switch → KB/Mouse → SInput

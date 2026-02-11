@@ -46,9 +46,9 @@
 // 0 controllers, 1-5 controllers
 #define NEOPIXEL_PATTERN_0 pattern_reds
 #define NEOPIXEL_PATTERN_1 pattern_red
-#define NEOPIXEL_PATTERN_2 pattern_green
-#define NEOPIXEL_PATTERN_3 pattern_blue
-#define NEOPIXEL_PATTERN_4 pattern_purple
+#define NEOPIXEL_PATTERN_2 pattern_red
+#define NEOPIXEL_PATTERN_3 pattern_green
+#define NEOPIXEL_PATTERN_4 pattern_pink
 #define NEOPIXEL_PATTERN_5 pattern_yellow
 
 #endif // CONSOLE_LED_CONFIG_H

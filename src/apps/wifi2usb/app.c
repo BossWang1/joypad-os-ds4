@@ -12,6 +12,7 @@
 #include "core/input_interface.h"
 #include "core/output_interface.h"
 #include "usb/usbd/usbd.h"
+#include "core/services/leds/leds.h"
 #include "wifi/jocp/jocp.h"
 #include "wifi/jocp/wifi_transport.h"
 #include "wifi/ble_beacon.h"
@@ -218,6 +219,16 @@ void app_task(void)
 {
     // Process button input
     button_task();
+
+    // Update LED color when USB output mode changes
+    static usb_output_mode_t last_led_mode = USB_OUTPUT_MODE_COUNT;
+    usb_output_mode_t mode = usbd_get_mode();
+    if (mode != last_led_mode) {
+        uint8_t r, g, b;
+        usbd_get_mode_color(mode, &r, &g, &b);
+        leds_set_color(r, g, b);
+        last_led_mode = mode;
+    }
 
     // Process WiFi transport (CYW43 poll + JOCP packet handling)
     wifi_transport_task();

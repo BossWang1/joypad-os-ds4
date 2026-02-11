@@ -29,4 +29,8 @@ void neopixel_set_custom_colors(const uint8_t colors[][3], uint8_t count);
 // Check if custom colors are active
 bool neopixel_has_custom_colors(void);
 
+// Set override color for mode indication (USB output apps)
+// When set, overrides pattern table: pulses when pat=0, solid when pat>0
+void neopixel_set_override_color(uint8_t r, uint8_t g, uint8_t b);
+
 #endif // WS2812_H

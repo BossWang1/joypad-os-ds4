@@ -23,6 +23,9 @@
 #include "usb/usbd/usbd.h"
 
 #include "bt/btstack/btstack_host.h"
+#include "bt/transport/bt_transport.h"
+#include "core/services/leds/leds.h"
+#include "core/buttons.h"
 #include "tusb.h"
 #include "pico/stdlib.h"
 #include <stdio.h>
@@ -35,11 +38,13 @@ static void on_button_event(button_event_t event)
 {
     switch (event) {
         case BUTTON_EVENT_CLICK:
-            printf("[app:usb2usb] Button click - current mode: %s\n",
-                   usbd_get_mode_name(usbd_get_mode()));
-            // Debug: print build info
-            printf("[DEBUG] GIT_COMMIT: '%s'\n", GIT_COMMIT);
-            printf("[DEBUG] BUILD_TIME: '%s'\n", BUILD_TIME);
+            if (bt_is_ready()) {
+                printf("[app:usb2usb] Starting BT scan (60s)...\n");
+                btstack_host_start_timed_scan(60000);
+            } else {
+                printf("[app:usb2usb] current mode: %s\n",
+                       usbd_get_mode_name(usbd_get_mode()));
+            }
             break;
 
         case BUTTON_EVENT_DOUBLE_CLICK: {
@@ -64,7 +69,11 @@ static void on_button_event(button_event_t event)
             break;
 
         case BUTTON_EVENT_HOLD:
-            // Long press to clear all Bluetooth bonds
+            // Long press to disconnect all devices and clear all bonds
+            if (bt_is_ready()) {
+                printf("[app:usb2usb] Disconnecting all devices and clearing bonds...\n");
+                btstack_host_disconnect_all_devices();
+            }
             btstack_host_delete_all_bonds();
             break;
 
@@ -155,6 +164,30 @@ void app_task(void)
 {
     // Process button input
     button_task();
+
+    // Update LED color when USB output mode changes
+    static usb_output_mode_t last_led_mode = USB_OUTPUT_MODE_COUNT;
+    usb_output_mode_t mode = usbd_get_mode();
+    if (mode != last_led_mode) {
+        uint8_t r, g, b;
+        usbd_get_mode_color(mode, &r, &g, &b);
+        leds_set_color(r, g, b);
+        last_led_mode = mode;
+    }
+
+    // Update LED with connected device count (USB HID + BT)
+    // This makes LED go solid as soon as a controller is detected,
+    // without waiting for button press to assign as player
+    int devices = 0;
+    for (uint8_t addr = 1; addr < MAX_DEVICES; addr++) {
+        if (tuh_mounted(addr) && tuh_hid_instance_count(addr) > 0) {
+            devices++;
+        }
+    }
+    if (bt_is_ready()) {
+        devices += btstack_classic_get_connection_count();
+    }
+    leds_set_connected_devices(devices);
 
     // Route feedback from USB device output to USB host input controllers
     // The output interface receives rumble/LED from the console/host

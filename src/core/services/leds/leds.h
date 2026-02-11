@@ -15,6 +15,12 @@ void leds_init(void);
 // Update LED state (call from main loop)
 void leds_task(void);
 
+// Set connected device count (used when devices connect before player assignment)
+void leds_set_connected_devices(int count);
+
+// Set override LED color (for USB output mode indication)
+void leds_set_color(uint8_t r, uint8_t g, uint8_t b);
+
 // Trigger profile indicator pattern
 void leds_indicate_profile(uint8_t profile_index);
 

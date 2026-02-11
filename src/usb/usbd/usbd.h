@@ -130,6 +130,9 @@ bool usbd_set_mode(usb_output_mode_t mode);
 // Get mode name string
 const char* usbd_get_mode_name(usb_output_mode_t mode);
 
+// Get LED color for a given output mode
+void usbd_get_mode_color(usb_output_mode_t mode, uint8_t *r, uint8_t *g, uint8_t *b);
+
 // Cycle to next USB output mode (for button handlers)
 // Cycles: HID → XInput → PS3 → PS4 → Switch → HID
 // Call usbd_set_mode() with result to apply
