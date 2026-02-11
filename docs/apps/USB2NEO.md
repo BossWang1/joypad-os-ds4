@@ -158,24 +158,28 @@ NEOGEO AES pad mapping to KOF style in controllers:
 
 ### Wiring (KB2040)
 
-| KB2040 Pin | DB15 Port | NEOGEO/SuperGun |
-| :--- | :--- | :--- |
-| **GND** | Pin 1 | Ground |
-| **GPIO 7** | Pin 2 | Button 6 / K3 |
-| **GPIO 6** | Pin 3 | Coin |
-| **GPIO 5** | Pin 4 | Button 4 / K1 / D |
-| **GPIO 4** | Pin 5 | Button 2 / P2 / B |
-| **GPIO 3** | Pin 6 | Right |
-| **GPIO 2** | Pin 7 | Down |
-| **5V** | Pin 8 | +5V Power |
-| **N/C** | Pin 9 | - |
-| **GPIO 20** | Pin 10 | Button 5 / K2 / Select |
-| **GPIO 18** | Pin 11 | Start |
-| **GPIO 26** | Pin 12 | Button 3 / P3 / C |
-| **GPIO 27** | Pin 13 | Button 1 / P1 / A |
-| **GPIO 28** | Pin 14 | Left |
-| **GPIO 29** | Pin 15 | Up |
+| KB2040 | Pico | RP2040 Zero | DB15 Port | NEOGEO Function |
+| :--- | :--- | :--- | :--- | :--- |
+| GND | GND | GND | Pin 1 | Ground |
+| GPIO 7 | GPIO 7 | GPIO 14 | Pin 2 | Button 6 / K3 |
+| GPIO 6 | GPIO 6 | GPIO 15 | Pin 3 | S1 (Coin) |
+| GPIO 5 | GPIO 5 | GPIO 26 | Pin 4 | Button 4 / D |
+| GPIO 4 | GPIO 4 | GPIO 27 | Pin 5 | Button 2 / B |
+| GPIO 3 | GPIO 3 | GPIO 28 | Pin 6 | Right |
+| GPIO 2 | GPIO 2 | GPIO 29 | Pin 7 | Down |
+| 5V | 5V | 5V | Pin 8 | +5V Power |
+| N/C | N/C | N/C | Pin 9 | - |
+| GPIO 20 | GPIO 20 | GPIO 8 | Pin 10 | Button 5 / Select |
+| GPIO 18 | GPIO 18 | GPIO 7 | Pin 11 | S2 (Start) |
+| GPIO 26 | GPIO 26 | GPIO 6 | Pin 12 | Button 3 / C |
+| GPIO 27 | GPIO 27 | GPIO 5 | Pin 13 | Button 1 / A |
+| GPIO 28 | GPIO 28 | GPIO 4 | Pin 14 | Left |
+| GPIO 29 | **GPIO 19** | GPIO 3 | Pin 15 | Up |
 
+**Note**: This implementation uses **Open Drain logic** to prevent voltage collisions between 5V and 3.3V, ensuring the safety of your NeoGeo or Arcade PCBs.
+  
+  * **Basic Protection:** To mitigate electrical risks, add a **1N4148 diode** with the cathode (the stripe) facing the RP2040.
+  * **Maximum Safety:** To eliminate all risks, it is recommended to use level shifters such as the **TXS0108E** (bidirectional) or the **74LVC245A** (unidirectional).
 
 ## Technical Details
 
