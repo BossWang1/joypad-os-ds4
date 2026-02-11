@@ -600,6 +600,8 @@ void btstack_host_power_on(void)
 // SCANNING
 // ============================================================================
 
+static uint32_t scan_timeout_end = 0;  // 0 = no timeout (indefinite scan)
+
 void btstack_host_start_scan(void)
 {
     if (!hid_state.powered_on) {
@@ -644,6 +646,13 @@ void btstack_host_stop_scan(void)
         gap_inquiry_stop();
         classic_state.inquiry_active = false;
     }
+}
+
+void btstack_host_start_timed_scan(uint32_t timeout_ms)
+{
+    scan_timeout_end = btstack_run_loop_get_time_ms() + timeout_ms;
+    printf("[BTSTACK_HOST] Starting timed scan (%lums)\n", (unsigned long)timeout_ms);
+    btstack_host_start_scan();
 }
 
 // ============================================================================
@@ -718,6 +727,15 @@ void btstack_host_process(void)
 
     // Handle Switch 2 rumble/LED feedback passthrough
     switch2_handle_feedback();
+
+    // Check scan timeout
+    if (scan_timeout_end > 0 && btstack_host_is_scanning()) {
+        if (btstack_run_loop_get_time_ms() >= scan_timeout_end) {
+            printf("[BTSTACK_HOST] Timed scan expired\n");
+            scan_timeout_end = 0;
+            btstack_host_stop_scan();
+        }
+    }
 }
 
 // ============================================================================
@@ -1138,7 +1156,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 } else {
                     // Non-Wiimote: use normal hid_host_connect
                     uint16_t hid_cid;
-                    uint8_t status = hid_host_connect(addr, HID_PROTOCOL_MODE_REPORT, &hid_cid);
+                    uint8_t status = hid_host_connect(addr, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT, &hid_cid);
                     if (status == ERROR_CODE_SUCCESS) {
                         printf("[BTSTACK_HOST] hid_host_connect started, cid=0x%04X\n", hid_cid);
 
@@ -1465,7 +1483,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     classic_state.pending_hid_connect = false;
 
                     uint16_t hid_cid;
-                    uint8_t status = hid_host_connect(name_addr, HID_PROTOCOL_MODE_REPORT, &hid_cid);
+                    uint8_t status = hid_host_connect(name_addr, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT, &hid_cid);
                     if (status == ERROR_CODE_SUCCESS) {
                         printf("[BTSTACK_HOST] hid_host_connect started, cid=0x%04X\n", hid_cid);
                         classic_connection_t* conn = find_free_classic_connection();
@@ -1602,7 +1620,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     } else {
                         printf("[BTSTACK_HOST] Deferred connect: standard gamepad, using HID Host\n");
                         uint16_t hid_cid;
-                        uint8_t status = hid_host_connect(name_addr, HID_PROTOCOL_MODE_REPORT, &hid_cid);
+                        uint8_t status = hid_host_connect(name_addr, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT, &hid_cid);
                         if (status == ERROR_CODE_SUCCESS) {
                             printf("[BTSTACK_HOST] hid_host_connect started, cid=0x%04X\n", hid_cid);
                             classic_connection_t* conn = find_free_classic_connection();
@@ -1656,8 +1674,8 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 strncpy(hid_state.pending_name, hid_state.last_connected_name, sizeof(hid_state.pending_name) - 1);
                 hid_state.pending_name[sizeof(hid_state.pending_name) - 1] = '\0';
                 btstack_host_connect_ble(hid_state.last_connected_addr, hid_state.last_connected_addr_type);
-            } else {
-                // Resume scanning for new devices
+            } else if (btstack_classic_get_connection_count() == 0) {
+                // Resume scanning only if no devices remain
                 btstack_host_start_scan();
             }
             break;
@@ -2111,6 +2129,8 @@ static void register_ble_hid_listener(hci_con_handle_t con_handle)
     printf("[BTSTACK_HOST] BLE HID listener registered, conn_index=%d\n", conn->conn_index);
 
     // Notify bthid layer that device is ready
+    btstack_host_stop_scan();
+    scan_timeout_end = 0;
     printf("[BTSTACK_HOST] Calling bt_on_hid_ready(%d) for BLE device '%s'\n", conn->conn_index, conn->name);
     bt_on_hid_ready(conn->conn_index);
 }
@@ -2222,6 +2242,8 @@ static void switch2_ccc_write_callback(uint8_t packet_type, uint16_t channel, ui
             bthid_update_device_info(conn->conn_index, conn->name, conn->vid, conn->pid);
 
             // Notify bthid layer that device is ready
+            btstack_host_stop_scan();
+            scan_timeout_end = 0;
             printf("[SW2_BLE] Calling bt_on_hid_ready(%d) for Switch 2 device\n", conn->conn_index);
             bt_on_hid_ready(conn->conn_index);
         }
@@ -2760,7 +2782,7 @@ static void start_hids_client(ble_connection_t *conn)
     hid_state.gatt_handle = conn->handle;
 
     uint8_t status = hids_client_connect(conn->handle, hids_client_handler,
-                                         HID_PROTOCOL_MODE_REPORT, &hid_state.hids_cid);
+                                         HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT, &hid_state.hids_cid);
 
     printf("[BTSTACK_HOST] hids_client_connect returned %d, cid=0x%04X\n",
            status, hid_state.hids_cid);
@@ -2796,6 +2818,8 @@ static void hids_client_handler(uint8_t packet_type, uint16_t channel, uint8_t *
                     }
 
                     // Notify bthid layer that device is ready
+                    btstack_host_stop_scan();
+                    scan_timeout_end = 0;
                     printf("[BTSTACK_HOST] Calling bt_on_hid_ready(%d) for BLE device '%s'\n",
                            conn->conn_index, conn->name);
                     bt_on_hid_ready(conn->conn_index);
@@ -2911,7 +2935,7 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
                 printf("[BTSTACK_HOST] Wiimote HID incoming - accepting\n");
                 wiimote_conn.using_hid_host = true;
                 wiimote_conn.hid_host_cid = hid_cid;
-                hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT);
+                hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT);
 
                 // Allocate classic_connection slot for HID_SUBEVENT_CONNECTION_OPENED to find
                 classic_connection_t* conn = find_free_classic_connection();
@@ -2936,7 +2960,7 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
             }
 
             printf("[BTSTACK_HOST] HID incoming connection, cid=0x%04X - accepting\n", hid_cid);
-            hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT);
+            hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT);
 
             // Allocate connection slot if needed
             if (!find_classic_connection_by_cid(hid_cid)) {
@@ -2995,6 +3019,23 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
                 classic_connection_t* conn = find_classic_connection_by_cid(hid_cid);
                 if (conn) {
                     memset(conn, 0, sizeof(*conn));
+                }
+
+                // If this was an outgoing connection, disconnect ACL and wait for
+                // the device to reconnect via the incoming path. Some controllers
+                // (certain DS4 HW revisions) don't accept HID L2CAP channels from
+                // the host but work when they initiate the connection themselves.
+                // A link key was exchanged during the failed attempt, so when the
+                // device reconnects (incoming), authentication will use the stored key.
+                // Don't resume scanning — otherwise we'll rediscover the device
+                // still in pairing mode and loop endlessly.
+                if (!hid_subevent_connection_opened_get_incoming(packet)) {
+                    hci_con_handle_t con_handle = hid_subevent_connection_opened_get_con_handle(packet);
+                    printf("[BTSTACK_HOST] Outgoing HID failed, disconnecting to allow incoming reconnect\n");
+                    gap_disconnect(con_handle);
+                    classic_state.pending_outgoing = false;
+                    classic_state.pending_valid = false;
+                    // Don't scan — stay connectable, wait for incoming reconnection
                 }
                 return;
             }
@@ -3076,7 +3117,8 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
                             // Using HID Host fallback - ready to go
                             wiimote_conn.hid_host_ready = true;
                             wiimote_conn.state = WIIMOTE_STATE_CONNECTED;
-                            btstack_host_stop_scan();  // Stop scanning now that we're connected
+                            btstack_host_stop_scan();
+                            scan_timeout_end = 0;
                             printf("[BTSTACK_HOST] Wiimote: calling bt_on_hid_ready(%d) via HID Host\n", conn_index);
                             bt_on_hid_ready(conn_index);
                         } else if (wiimote_conn.control_cid != 0 && wiimote_conn.interrupt_cid != 0) {
@@ -3124,6 +3166,8 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
             // Notify bthid layer that device is ready (non-Wiimote devices)
             int conn_index = get_classic_conn_index(hid_cid);
             if (conn_index >= 0) {
+                btstack_host_stop_scan();
+                scan_timeout_end = 0;
                 printf("[BTSTACK_HOST] Calling bt_on_hid_ready(%d)\n", conn_index);
                 bt_on_hid_ready(conn_index);
             }
@@ -3166,6 +3210,12 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
             classic_connection_t* conn = find_classic_connection_by_cid(hid_cid);
             if (conn) {
                 memset(conn, 0, sizeof(*conn));
+            }
+
+            // Resume scanning if no devices remain
+            if (btstack_classic_get_connection_count() == 0) {
+                printf("[BTSTACK_HOST] No devices connected, resuming scan\n");
+                btstack_host_start_scan();
             }
             break;
         }
@@ -3241,6 +3291,7 @@ static void wiimote_l2cap_packet_handler(uint8_t packet_type, uint16_t channel, 
 
                     // Stop scanning now that we have a connected device
                     btstack_host_stop_scan();
+                    scan_timeout_end = 0;
 
                     // Allocate classic connection slot if not already allocated (reconnection case)
                     if (wiimote_conn.conn_index < 0) {
@@ -3594,6 +3645,30 @@ uint8_t btstack_classic_get_connection_count(void)
         }
     }
     return count;
+}
+
+// ============================================================================
+// DISCONNECT ALL
+// ============================================================================
+
+void btstack_host_disconnect_all_devices(void)
+{
+    printf("[BTSTACK_HOST] Disconnecting all devices...\n");
+
+    for (int i = 0; i < MAX_CLASSIC_CONNECTIONS; i++) {
+        if (classic_state.connections[i].active && classic_state.connections[i].hid_cid) {
+            hid_host_disconnect(classic_state.connections[i].hid_cid);
+        }
+    }
+    for (int i = 0; i < MAX_BLE_CONNECTIONS; i++) {
+        if (hid_state.connections[i].handle != 0) {
+            gap_disconnect(hid_state.connections[i].handle);
+        }
+    }
+
+    // Clear reconnection state so we don't try to reconnect to cleared devices
+    hid_state.has_last_connected = false;
+    hid_state.reconnect_attempts = 0;
 }
 
 // ============================================================================

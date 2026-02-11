@@ -45,6 +45,9 @@ void btstack_host_start_scan(void);
 // Stop scanning
 void btstack_host_stop_scan(void);
 
+// Start scanning with a timeout (auto-stops after timeout_ms)
+void btstack_host_start_timed_scan(uint32_t timeout_ms);
+
 // Connect to a BLE device
 void btstack_host_connect_ble(bd_addr_t addr, bd_addr_type_t addr_type);
 
@@ -107,6 +110,9 @@ bool btstack_wiimote_send_control(uint8_t conn_index, const uint8_t* data, uint1
 // ============================================================================
 // BOND MANAGEMENT
 // ============================================================================
+
+// Disconnect all active BT devices (Classic and BLE)
+void btstack_host_disconnect_all_devices(void);
 
 // Delete all stored BT bonds (Classic and BLE)
 // Devices will need to re-pair after this
