@@ -151,31 +151,32 @@ static void process_ms_sidewinder_commander(uint8_t dev_addr, uint8_t instance,
     if (btns & (1 << 11)) buttons |= JP_BUTTON_A2;
 
     // 3-position toggle controls X/Y axis assignment:
-    //   Position 1: X/Y → left stick,  Rz → right stick X (default)
-    //   Position 2: X/Y → d-pad only (no analog)
-    //   Position 3: X/Y → right stick, Rz → left stick X
+    //   Position 1: X/Y → left stick, twist → right stick X (default)
+    //   Position 2: X/Y → d-pad only, twist → right stick X
+    //   Position 3: X/Y → right stick (twist on ANALOG_RZ only)
+    // Twist (Rz) always goes to ANALOG_RZ (used for scroll in KB/Mouse mode)
     uint8_t analog_lx, analog_ly, analog_rx, analog_ry;
 
     #define COMMANDER_DPAD_THRESHOLD 128
 
     switch (toggle) {
-        case 2:  // D-pad mode (no analog)
+        case 2:  // D-pad mode (no analog for tilt)
             analog_lx = 128;
             analog_ly = 128;
-            analog_rx = 128;
+            analog_rx = scaled_rz;
             analog_ry = 128;
             if (axis_x < -COMMANDER_DPAD_THRESHOLD) buttons |= JP_BUTTON_DL;
             if (axis_x >  COMMANDER_DPAD_THRESHOLD) buttons |= JP_BUTTON_DR;
             if (axis_y < -COMMANDER_DPAD_THRESHOLD) buttons |= JP_BUTTON_DU;
             if (axis_y >  COMMANDER_DPAD_THRESHOLD) buttons |= JP_BUTTON_DD;
             break;
-        case 3:  // Right stick mode
-            analog_lx = scaled_rz;
+        case 3:  // Right stick mode (tilt X/Y → right stick)
+            analog_lx = 128;
             analog_ly = 128;
             analog_rx = scaled_xy_x;
             analog_ry = scaled_xy_y;
             break;
-        default:  // Left stick mode
+        default:  // Left stick mode (tilt → left, twist → right X)
             analog_lx = scaled_xy_x;
             analog_ly = scaled_xy_y;
             analog_rx = scaled_rz;
@@ -190,7 +191,7 @@ static void process_ms_sidewinder_commander(uint8_t dev_addr, uint8_t instance,
         .transport = INPUT_TRANSPORT_USB,
         .buttons = buttons,
         .button_count = 12,
-        .analog = {analog_lx, analog_ly, analog_rx, analog_ry, 0, 0},
+        .analog = {analog_lx, analog_ly, analog_rx, analog_ry, 0, 0, scaled_rz},
         .keys = 0,
     };
     router_submit_input(&event);

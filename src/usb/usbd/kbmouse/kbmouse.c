@@ -70,15 +70,21 @@ static const kbmouse_button_map_t default_button_map[] = {
 // ============================================================================
 
 // Max mouse pixels per USB poll at default sensitivity (5).
-// At ~125Hz polling: 20 * 125 = 2500 px/sec (crosses 1080p in ~0.8s).
-#define MOUSE_MAX_SPEED 20.0f
+// At ~125Hz polling: 15 * 125 = 1875 px/sec max (crosses 1080p in ~1s).
+#define MOUSE_MAX_SPEED 15.0f
 
-// Sub-pixel accumulators for smooth low-speed mouse movement
+// Sub-pixel accumulators for smooth low-speed movement
 static float mouse_accum_x = 0.0f;
 static float mouse_accum_y = 0.0f;
+static float scroll_accum = 0.0f;
 
-// Apply deadzone, quadratic curve, and sub-pixel accumulation.
-// accumulator persists fractional pixels between polls for smooth movement.
+// Previous Rz value for delta-based scroll
+static uint8_t prev_rz = 128;
+
+// Apply deadzone, cubic curve, and sub-pixel accumulation.
+// Cubic (x³) gives a large precision zone: 50% deflection = 12.5% of max speed,
+// while full deflection still reaches max. Sub-pixel accumulation ensures smooth
+// low-speed movement by carrying fractional pixels between polls.
 static int8_t process_analog_to_mouse(uint8_t analog, uint8_t deadzone,
                                        uint8_t sensitivity, float* accumulator)
 {
@@ -98,8 +104,9 @@ static int8_t process_analog_to_mouse(uint8_t analog, uint8_t deadzone,
     // Normalize to 0.0-1.0 range (after deadzone)
     float normalized = (float)magnitude / (127 - deadzone);
 
-    // Apply quadratic curve for acceleration (more precise at low speeds)
-    float curved = normalized * normalized;
+    // Cubic curve for large precision zone at low deflection
+    // 25% deflection → 1.6% speed, 50% → 12.5%, 75% → 42%, 100% → 100%
+    float curved = normalized * normalized * normalized;
 
     // Scale by sensitivity (1-10 maps to 0.2-2.0)
     float sens_factor = (float)sensitivity / 5.0f;
@@ -114,38 +121,6 @@ static int8_t process_analog_to_mouse(uint8_t analog, uint8_t deadzone,
     return delta;
 }
 
-// Process analog stick for scroll (right stick)
-// Returns scroll delta (-127 to 127)
-static int8_t process_analog_to_scroll(uint8_t analog, uint8_t deadzone, uint8_t speed)
-{
-    // Center analog value to signed
-    int16_t centered = (int16_t)analog - 128;
-
-    // Apply deadzone
-    if (abs(centered) < deadzone) {
-        return 0;
-    }
-
-    // Calculate sign and magnitude
-    int16_t sign = (centered > 0) ? 1 : -1;
-    int16_t magnitude = abs(centered) - deadzone;
-
-    // Normalize to 0.0-1.0 range
-    float normalized = (float)magnitude / (127 - deadzone);
-
-    // Linear scaling for scroll (no curve - feels more natural)
-    // Speed 1-10 maps to 0.1-1.0 of max scroll rate
-    float speed_factor = (float)speed / 10.0f;
-
-    // Calculate result (scroll values are typically smaller)
-    int16_t result = (int16_t)(normalized * 15.0f * speed_factor) * sign;
-
-    // Clamp
-    if (result > 127) result = 127;
-    if (result < -127) result = -127;
-
-    return (int8_t)result;
-}
 
 // ============================================================================
 // CONVERSION API
@@ -160,6 +135,8 @@ void kbmouse_init(void)
     analog_config.scroll_speed = KBMOUSE_DEFAULT_SCROLL_SPEED;
     mouse_accum_x = 0.0f;
     mouse_accum_y = 0.0f;
+    scroll_accum = 0.0f;
+    prev_rz = 128;
     keyboard_led_state = 0;
 }
 
@@ -206,19 +183,39 @@ void kbmouse_convert(uint32_t buttons,
 
     // Process analog sticks
 
-    // Right stick -> Mouse movement (like "look" in FPS games)
-    mouse_report->x = process_analog_to_mouse(
-        profile_out->right_x,
-        analog_config.deadzone,
-        analog_config.sensitivity,
-        &mouse_accum_x
-    );
-    mouse_report->y = process_analog_to_mouse(
-        profile_out->right_y,
-        analog_config.deadzone,
-        analog_config.sensitivity,
-        &mouse_accum_y
-    );
+    // Rz axis present (non-zero) means device has a dedicated extra axis
+    // (e.g. twist controller). Use it for delta-based scroll, and skip
+    // right stick → mouse so the axes don't conflict.
+    // Normal controllers (rz_analog == 0) use right stick for mouse.
+    if (profile_out->rz_analog != 0) {
+        // Delta-based scroll: twist *movement* generates scroll ticks.
+        // Twisting scrolls proportionally; releasing springs back and
+        // scrolls in reverse as the axis returns to center.
+        int16_t rz_delta = (int16_t)profile_out->rz_analog - (int16_t)prev_rz;
+        prev_rz = profile_out->rz_analog;
+        if (rz_delta != 0) {
+            // scroll_speed 1-10 maps to 0.1-1.0 scaling
+            float scale = (float)analog_config.scroll_speed / 10.0f;
+            scroll_accum += (float)rz_delta * scale;
+            int8_t scroll_ticks = (int8_t)scroll_accum;
+            scroll_accum -= (float)scroll_ticks;
+            mouse_report->wheel = -scroll_ticks;
+        }
+    } else {
+        // Right stick -> Mouse movement (standard controllers)
+        mouse_report->x = process_analog_to_mouse(
+            profile_out->right_x,
+            analog_config.deadzone,
+            analog_config.sensitivity,
+            &mouse_accum_x
+        );
+        mouse_report->y = process_analog_to_mouse(
+            profile_out->right_y,
+            analog_config.deadzone,
+            analog_config.sensitivity,
+            &mouse_accum_y
+        );
+    }
 
     // Left stick -> WASD keys (movement)
     // Use a larger deadzone for digital output to avoid drift

@@ -89,9 +89,9 @@ typedef struct {
 } kbmouse_analog_config_t;
 
 // Default analog configuration
-#define KBMOUSE_DEFAULT_DEADZONE        15
+#define KBMOUSE_DEFAULT_DEADZONE        5
 #define KBMOUSE_DEFAULT_SENSITIVITY     5
-#define KBMOUSE_DEFAULT_SCROLL_DEADZONE 30
+#define KBMOUSE_DEFAULT_SCROLL_DEADZONE 5
 #define KBMOUSE_DEFAULT_SCROLL_SPEED    3
 
 // ============================================================================
