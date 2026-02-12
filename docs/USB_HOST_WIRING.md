@@ -19,7 +19,6 @@ Joypad uses PIO-based USB host (bit-banged via the RP2040's PIO1 peripheral). Th
 | Raspberry Pi Pico | GPIO 16 | GPIO 17 | VBUS (pin 40) | |
 | Raspberry Pi Pico W | GPIO 16 | GPIO 17 | VBUS (pin 40) | |
 | Raspberry Pi Pico 2 W | GPIO 16 | GPIO 17 | VBUS (pin 40) | |
-| Adafruit KB2040 | GPIO 16 | GPIO 17 | VBUS | Default for console adapters |
 | Adafruit Feather RP2040 USB Host | GPIO 16 | GPIO 17 | GPIO 18 | Built-in USB-A port, no wiring needed |
 | Waveshare RP2040-Zero | GPIO 10 | GPIO 11 | 5V | Compact boards |
 | Waveshare RP2350A USB-A | GPIO 12 | GPIO 13 | 5V | Has built-in USB-A port |
@@ -55,15 +54,6 @@ Joypad uses PIO-based USB host (bit-banged via the RP2040's PIO1 peripheral). Th
 | GND (pin 38) | 4 | GND (black) |
 
 > **Power note:** VBUS on pin 40 passes through 5V from the Pico's own USB connection. If you need more power (multiple controllers, rumble), use an externally powered USB hub on the host port, or power the Pico via VSYS with a 5V supply and connect that supply to USB-A pin 1 instead.
-
-### Adafruit KB2040
-
-| KB2040 Pin | USB-A Pin | Signal |
-|------------|-----------|--------|
-| D10 (GPIO 16) | 3 | D+ (green) |
-| MOSI (GPIO 17) | 2 | D- (white) |
-| VBUS (RAW) | 1 | 5V (red) |
-| GND | 4 | GND (black) |
 
 ### Waveshare RP2040-Zero
 
