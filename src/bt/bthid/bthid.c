@@ -23,7 +23,7 @@
 // CONFIGURATION
 // ============================================================================
 
-#define BTHID_MAX_DRIVERS       8   // Max registered drivers
+#define BTHID_MAX_DRIVERS       16  // Max registered drivers
 
 // ============================================================================
 // STATIC DATA

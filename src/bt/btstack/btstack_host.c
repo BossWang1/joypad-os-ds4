@@ -1156,7 +1156,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 } else {
                     // Non-Wiimote: use normal hid_host_connect
                     uint16_t hid_cid;
-                    uint8_t status = hid_host_connect(addr, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT, &hid_cid);
+                    uint8_t status = hid_host_connect(addr, HID_PROTOCOL_MODE_REPORT, &hid_cid);
                     if (status == ERROR_CODE_SUCCESS) {
                         printf("[BTSTACK_HOST] hid_host_connect started, cid=0x%04X\n", hid_cid);
 
@@ -1483,7 +1483,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     classic_state.pending_hid_connect = false;
 
                     uint16_t hid_cid;
-                    uint8_t status = hid_host_connect(name_addr, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT, &hid_cid);
+                    uint8_t status = hid_host_connect(name_addr, HID_PROTOCOL_MODE_REPORT, &hid_cid);
                     if (status == ERROR_CODE_SUCCESS) {
                         printf("[BTSTACK_HOST] hid_host_connect started, cid=0x%04X\n", hid_cid);
                         classic_connection_t* conn = find_free_classic_connection();
@@ -1620,7 +1620,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     } else {
                         printf("[BTSTACK_HOST] Deferred connect: standard gamepad, using HID Host\n");
                         uint16_t hid_cid;
-                        uint8_t status = hid_host_connect(name_addr, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT, &hid_cid);
+                        uint8_t status = hid_host_connect(name_addr, HID_PROTOCOL_MODE_REPORT, &hid_cid);
                         if (status == ERROR_CODE_SUCCESS) {
                             printf("[BTSTACK_HOST] hid_host_connect started, cid=0x%04X\n", hid_cid);
                             classic_connection_t* conn = find_free_classic_connection();
@@ -2782,7 +2782,7 @@ static void start_hids_client(ble_connection_t *conn)
     hid_state.gatt_handle = conn->handle;
 
     uint8_t status = hids_client_connect(conn->handle, hids_client_handler,
-                                         HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT, &hid_state.hids_cid);
+                                         HID_PROTOCOL_MODE_REPORT, &hid_state.hids_cid);
 
     printf("[BTSTACK_HOST] hids_client_connect returned %d, cid=0x%04X\n",
            status, hid_state.hids_cid);
@@ -2935,7 +2935,7 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
                 printf("[BTSTACK_HOST] Wiimote HID incoming - accepting\n");
                 wiimote_conn.using_hid_host = true;
                 wiimote_conn.hid_host_cid = hid_cid;
-                hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT);
+                hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT);
 
                 // Allocate classic_connection slot for HID_SUBEVENT_CONNECTION_OPENED to find
                 classic_connection_t* conn = find_free_classic_connection();
@@ -2960,7 +2960,7 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
             }
 
             printf("[BTSTACK_HOST] HID incoming connection, cid=0x%04X - accepting\n", hid_cid);
-            hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT);
+            hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT);
 
             // Allocate connection slot if needed
             if (!find_classic_connection_by_cid(hid_cid)) {
