@@ -60,7 +60,7 @@ Additional modes (not in cycle, accessible via web config):
 | XInput | L+R | 1-4 | - | - | XSM3 (Xbox 360) |
 | PS3 | L+R | 1-7 | - | Gyro/Accel | - |
 | PS4 | L+R | - | Lightbar | - | Passthrough |
-| Switch | - | - | - | - | - |
+| Switch | L+R | 1-7 | - | - | - |
 | KB/Mouse | - | - | - | - | - |
 
 Feedback (rumble, LED, RGB) is forwarded back to the connected input controller. For example, Xbox 360 player LED assignment will set the corresponding color on a DualSense lightbar.
