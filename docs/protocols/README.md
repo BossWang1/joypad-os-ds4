@@ -1,6 +1,6 @@
 # Console Protocol Documentation
 
-This directory contains comprehensive technical documentation of the retro console communication protocols implemented in Joypad. Each protocol represents significant reverse-engineering work and aims to serve as a definitive reference for developers.
+Technical documentation of the retro console communication protocols implemented in Joypad.
 
 ## Available Protocol Documentation
 
@@ -9,7 +9,7 @@ This directory contains comprehensive technical documentation of the retro conso
 **Reverse-Engineered**: 2022-2023
 **Significance**: First open-source documentation
 
-The Nuon Polyface controller protocol was previously completely undocumented. This represents months of hardware analysis, SDK research, and iterative testing.
+The Nuon Polyface controller protocol was previously undocumented publicly. Based on hardware analysis, SDK research, and iterative testing.
 
 ### ✅ [PCEngine / TurboGrafx-16 Protocol](PCENGINE.md)
 **Status**: Complete
@@ -23,29 +23,28 @@ While the basic PCEngine controller protocol is documented in the community, thi
 - RP2040 PIO state machine architecture
 - Dual-core coordination for timing-critical output
 
+### ✅ [3DO Player Bus (PBUS) Protocol](3DO_PBUS.md)
+**Status**: Complete
+**Implemented**: 2025
+**Significance**: Comprehensive PBUS reference with daisy-chain and device type documentation
+
+Covers the 3DO PBUS serial shift register protocol:
+- Device identification and daisy-chain mechanics
+- Bit structures for all device types (joypad, flightstick, mouse, lightgun)
+- Hot-swapping and initialization
+- RP2040 PIO implementation
+
 ### ✅ [GameCube Joybus Protocol](GAMECUBE_JOYBUS.md)
 **Status**: Complete
 **Implemented**: 2022-2025
 **Significance**: Reverse-engineered keyboard protocol + comprehensive profile system
 
 While the basic joybus protocol is documented, this reference provides:
-- **Reverse-engineered GameCube keyboard protocol** (0x54 command, keycode mappings, checksum algorithm)
-- Sophisticated profile system with flash persistence (SSBM, MKWii, Fighting, SNES configs)
+- Reverse-engineered GameCube keyboard protocol (0x54 command, keycode mappings, checksum algorithm)
+- Profile system with flash persistence (SSBM, MKWii, Fighting, SNES configs)
 - Joybus PIO timing implementation (130MHz overclocking requirement)
-- Advanced trigger logic for different controller types
+- Trigger logic for different controller types
 - Dual-core coordination for timing-critical output
-
-## Planned Documentation
-
-### 🚧 Xbox One I2C Protocol
-**Status**: Planned
-**Implementation**: `src/console/xboxone/`
-
-Internal USB host mod protocol:
-- I2C communication with Xbox One controller chip
-- Button/analog passthrough
-- Rumble protocol (partial reverse-engineering)
-- Integration challenges
 
 ## Documentation Standards
 
@@ -137,36 +136,21 @@ When adding new protocol documentation:
 4. **Document discoveries** - Highlight reverse-engineered insights
 5. **Maintain consistency** - Follow the established format
 
-## Significance of This Work
-
-These protocol documents serve multiple purposes:
-
-1. **Preservation** - Document protocols before hardware/knowledge is lost
-2. **Education** - Teach modern developers about retro communication protocols
-3. **Reproducibility** - Enable others to build compatible implementations
-4. **Community** - Share knowledge with homebrew and preservation communities
-
-Many retro protocols were never officially documented, existing only in proprietary SDKs or firmware. Reverse-engineering and documenting these protocols ensures they remain accessible for future generations.
-
 ## Related Resources
 
 ### External Protocol Documentation
 
 - **GameCube Joybus**: [joybus-pio](https://github.com/JonnyHaystack/joybus-pio)
 - **N64 Controller**: [N64brew](https://n64brew.dev)
-- **PCEngine**: Limited public documentation
+- **PCEngine**: [pce-devel/PCE_Controller_Info](https://github.com/pce-devel/PCE_Controller_Info)
 - **Nuon**: No prior public documentation (see NUON_POLYFACE.md)
 
 ### Retro Console Communities
 
-- **Nuon-Dome**: Nuon homebrew community
-- **N64brew**: Nintendo 64 development
-- **NEC Retro**: PCEngine/TurboGrafx-16
+- **[Nuon-Dome](https://www.nuon-dome.com/)**: Nuon homebrew community
+- **[N64brew](https://n64brew.dev)**: Nintendo 64 development
 
 ## License
 
 All protocol documentation in this directory is licensed under Apache License 2.0, matching the Joypad project license.
 
----
-
-*This directory represents countless hours of hardware analysis, logic analyzer captures, SDK research, and iterative testing. Each protocol document is a contribution to the preservation of retro gaming technology.*
