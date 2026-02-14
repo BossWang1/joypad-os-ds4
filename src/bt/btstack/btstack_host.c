@@ -3552,6 +3552,18 @@ bool btstack_classic_send_set_report(uint8_t conn_index, uint8_t report_id,
 bool btstack_classic_send_report(uint8_t conn_index, uint8_t report_id,
                                   const uint8_t* data, uint16_t len)
 {
+    // BLE connection — use GATT HIDS client
+    if (conn_index >= BLE_CONN_INDEX_OFFSET) {
+        uint8_t ble_index = conn_index - BLE_CONN_INDEX_OFFSET;
+        if (ble_index >= MAX_BLE_CONNECTIONS) return false;
+        ble_connection_t* conn = &hid_state.connections[ble_index];
+        if (conn->handle == 0 || !conn->hid_ready) return false;
+        if (hid_state.hids_cid == 0) return false;
+        return hids_client_send_write_report(hid_state.hids_cid, report_id,
+                                              HID_REPORT_TYPE_OUTPUT,
+                                              data, len) == ERROR_CODE_SUCCESS;
+    }
+
     if (conn_index >= MAX_CLASSIC_CONNECTIONS) return false;
 
     classic_connection_t* conn = &classic_state.connections[conn_index];

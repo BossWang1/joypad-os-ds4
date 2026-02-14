@@ -6,6 +6,7 @@
 #include "core/router/router.h"
 #include "core/buttons.h"
 #include "core/services/players/manager.h"
+#include "core/services/players/feedback.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -50,10 +51,15 @@ typedef struct __attribute__((packed)) {
 // DRIVER DATA
 // ============================================================================
 
+// Rumble output report (Report ID 0x05, 4 bytes)
+#define STADIA_REPORT_RUMBLE    0x05
+
 typedef struct {
     input_event_t event;
     stadia_report_t prev_report;
     bool initialized;
+    uint8_t rumble_left;
+    uint8_t rumble_right;
 } stadia_bt_data_t;
 
 static stadia_bt_data_t stadia_data[BTHID_MAX_DEVICES];
@@ -182,8 +188,33 @@ static void stadia_process_report(bthid_device_t* device, const uint8_t* data, u
 
 static void stadia_task(bthid_device_t* device)
 {
-    (void)device;
-    // TODO: Implement rumble output if needed
+    stadia_bt_data_t* sd = (stadia_bt_data_t*)device->driver_data;
+    if (!sd) return;
+
+    int player_idx = find_player_index(sd->event.dev_addr, sd->event.instance);
+    if (player_idx < 0) return;
+
+    feedback_state_t* fb = feedback_get_state(player_idx);
+    if (!fb) return;
+
+    if (fb->rumble_dirty) {
+        uint8_t left = fb->rumble.left;
+        uint8_t right = fb->rumble.right;
+        if (left != sd->rumble_left || right != sd->rumble_right) {
+            // Stadia rumble: Report ID 0x05, two 16-bit LE motor values (0-65535)
+            uint8_t buf[4];
+            uint16_t left_motor = (uint16_t)left * 257;
+            uint16_t right_motor = (uint16_t)right * 257;
+            buf[0] = left_motor & 0xFF;
+            buf[1] = (left_motor >> 8) & 0xFF;
+            buf[2] = right_motor & 0xFF;
+            buf[3] = (right_motor >> 8) & 0xFF;
+            bthid_send_output_report(device->conn_index, STADIA_REPORT_RUMBLE, buf, sizeof(buf));
+            sd->rumble_left = left;
+            sd->rumble_right = right;
+        }
+        feedback_clear_dirty(player_idx);
+    }
 }
 
 static void stadia_disconnect(bthid_device_t* device)
