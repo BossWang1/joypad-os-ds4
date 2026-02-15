@@ -175,15 +175,23 @@ void input_sony_ds5(uint8_t dev_addr, uint8_t instance, uint8_t const* report, u
       // keep analog within range [1-255]
       ensureAllNonZero(&analog_1x, &analog_1y, &analog_2x, &analog_2y);
 
+      // Battery: offset 53 in data (after report ID) — bits 0-3 = level (0-10), bits 4-7 = status
+      uint8_t bat_level = 0;
+      bool bat_charging = false;
+      if (len >= 54) {
+        uint8_t raw = report[53];
+        uint8_t level = raw & 0x0F;
+        uint8_t status = (raw >> 4) & 0x0F;
+        bat_level = (level > 10) ? 100 : level * 10;
+        bat_charging = (status == 1);
+      }
+
       // add to accumulator and post to the state machine
       // if a scan from the host machine is ongoing, wait
       input_event_t event = {
         .dev_addr = dev_addr,
         .instance = instance,
         .type = INPUT_TYPE_GAMEPAD,
-        .transport = INPUT_TRANSPORT_USB,
-        .transport = INPUT_TRANSPORT_USB,
-        .transport = INPUT_TRANSPORT_USB,
         .transport = INPUT_TRANSPORT_USB,
         .buttons = buttons,
         .button_count = 10,  // PS5: Cross, Circle, Square, Triangle, L1, R1, L2, R2, L3, R3
@@ -194,6 +202,8 @@ void input_sony_ds5(uint8_t dev_addr, uint8_t instance, uint8_t const* report, u
         .has_motion = true,
         .accel = {ds5_report.accel[0], ds5_report.accel[1], ds5_report.accel[2]},
         .gyro = {ds5_report.gyro[0], ds5_report.gyro[1], ds5_report.gyro[2]},
+        .battery_level = bat_level,
+        .battery_charging = bat_charging,
       };
       router_submit_input(&event);
 

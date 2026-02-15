@@ -61,7 +61,7 @@ typedef struct __attribute__((packed)) {
 
     // Extended data for motion
     uint16_t timestamp;
-    uint8_t battery;
+    uint8_t sensor_temperature;
     int16_t gyro[3];    // x, y, z
     int16_t accel[3];   // x, y, z
     // Touchpad etc follows but not parsed
@@ -331,11 +331,14 @@ static void ds4_process_report(bthid_device_t* device, const uint8_t* data, uint
         ds4->event.has_motion = false;
     }
 
-    // Battery level
-    uint8_t raw_battery = rpt->battery;
-    uint8_t level = (raw_battery & 0x0F);
-    ds4->event.battery_level = (level > 10) ? 100 : level * 10;
-    ds4->event.battery_charging = (raw_battery & 0x10) != 0;
+    // Battery: status[0] at report_data[29] — bits 0-3 = level (0-10), bit 4 = cable
+    // (struct field labeled 'battery' at offset 11 is actually sensor_temperature)
+    if (report_len > 29) {
+        uint8_t raw = report_data[29];
+        uint8_t level = (raw & 0x0F);
+        ds4->event.battery_level = (level > 10) ? 100 : level * 10;
+        ds4->event.battery_charging = (raw & 0x10) != 0;
+    }
 
     // Submit to router
     router_submit_input(&ds4->event);

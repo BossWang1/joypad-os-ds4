@@ -259,13 +259,21 @@ void input_sony_ds4(uint8_t dev_addr, uint8_t instance, uint8_t const* report, u
 
       // add to accumulator and post to the state machine
       // if a scan from the host machine is ongoing, wait
+      // Battery: offset 29 in data (after report ID) — bits 0-3 = level (0-10), bit 4 = cable
+      // (struct field labeled 'battery' at offset 11 is actually sensor_temperature)
+      uint8_t bat_level = 0;
+      bool bat_charging = false;
+      if (len >= 30) {
+        uint8_t raw = report[29];
+        uint8_t level = (raw & 0x0F);
+        bat_level = (level > 10) ? 100 : level * 10;
+        bat_charging = (raw & 0x10) != 0;
+      }
+
       input_event_t event = {
         .dev_addr = dev_addr,
         .instance = instance,
         .type = INPUT_TYPE_GAMEPAD,
-        .transport = INPUT_TRANSPORT_USB,
-        .transport = INPUT_TRANSPORT_USB,
-        .transport = INPUT_TRANSPORT_USB,
         .transport = INPUT_TRANSPORT_USB,
         .buttons = buttons,
         .button_count = 10,  // PS4: Cross, Circle, Square, Triangle, L1, R1, L2, R2, L3, R3
@@ -276,6 +284,8 @@ void input_sony_ds4(uint8_t dev_addr, uint8_t instance, uint8_t const* report, u
         .has_motion = true,
         .accel = {ds4_report.accel[0], ds4_report.accel[1], ds4_report.accel[2]},
         .gyro = {ds4_report.gyro[0], ds4_report.gyro[1], ds4_report.gyro[2]},
+        .battery_level = bat_level,
+        .battery_charging = bat_charging,
       };
       router_submit_input(&event);
 

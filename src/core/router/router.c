@@ -647,6 +647,12 @@ static inline void router_merge_mode(const input_event_t* event, output_target_t
                         }
                     }
 
+                    // Battery: use first device that reports battery
+                    if (dev->battery_level > 0 && out->current_state.battery_level == 0) {
+                        out->current_state.battery_level = dev->battery_level;
+                        out->current_state.battery_charging = dev->battery_charging;
+                    }
+
                     // Use metadata from first active device
                     if (first) {
                         out->current_state.dev_addr = dev->dev_addr;
@@ -964,6 +970,12 @@ void router_device_disconnected(uint8_t dev_addr, int8_t instance) {
                             out_state->current_state.analog[j] = dev->analog[j];
                         }
                     }
+                }
+
+                // Battery: use first device that reports battery
+                if (dev->battery_level > 0 && out_state->current_state.battery_level == 0) {
+                    out_state->current_state.battery_level = dev->battery_level;
+                    out_state->current_state.battery_charging = dev->battery_charging;
                 }
             }
         }
