@@ -79,7 +79,7 @@ CLR:  ────┐         ┌───────────────�
 SEL:  ────┐   ┌───┐   ┌───┐   ┌───┐   ┌──  (toggles between nibbles)
           └───┘   └───┘   └───┘   └───┘
 
-D0-3: ──[D-PAD]─[BTNS]─[D-PAD]─[BTNS]────  (responds to SEL transitions)
+D0-3: ──[D-PAD]─[BTNS]─[D-PAD]─[BTNS]────  (D-pad on SEL HIGH, Buttons on SEL LOW)
 ```
 
 **Scan Sequence**:
@@ -162,26 +162,27 @@ Extended mode for fighting games (Street Fighter II Championship Edition, Art of
 
 ### Protocol Extension
 
-6-button mode uses a **4-scan cycle** with a rotating state counter (3, 2, 1, 0). On most states the controller sends standard 2-button data, but on one specific state it sends the extended buttons instead:
+6-button mode uses a **4-scan cycle** with a rotating state counter (3, 2, 1, 0). The controller alternates between standard and extended data on every other scan:
 
 | State | Nibble 1 (SEL=HIGH) | Nibble 2 (SEL=LOW) |
 |-------|----------------------|---------------------|
-| 3, 1, 0 (Standard) | D-pad: Left, Down, Right, Up | Buttons: Run, Select, II, I |
-| 2 (Extended) | Extended: III, IV, V, VI (bits 7-4) | Reserved: all 0 (bits 3-0) |
+| 3, 1 (Standard) | D-pad: Left, Down, Right, Up | Buttons: Run, Select, II, I |
+| 2, 0 (Extended) | Reserved: all 0 (impossible D-pad state) | Extended: VI, V, IV, III |
 
-The state counter decrements on each scan (3 -> 2 -> 1 -> 0) and wraps back to 3 after state 0.
+The state counter decrements on each scan (3 -> 2 -> 1 -> 0) and wraps back to 3 after state 0. This produces an alternating pattern: standard, extended, standard, extended.
 
 ### Extended Button Layout
 
+On extended scans, the D-pad nibble (SEL=HIGH) outputs all zeros and the button nibble (SEL=LOW) outputs the extended buttons:
+
 | Bit | Button |
 |-----|--------|
-| 7 | III |
-| 6 | IV |
-| 5 | V |
-| 4 | VI |
-| 3-0 | Reserved (all 0) |
+| 3 | VI |
+| 2 | V |
+| 1 | IV |
+| 0 | III |
 
-Games detect 6-button controllers by reading the reserved low nibble: if bits 3-0 are all 0 during a scan, the controller is in 6-button mode.
+Games detect 6-button mode by checking the D-pad nibble (SEL=HIGH) for all zeros. Since pressing all four directions simultaneously is physically impossible on a real D-pad, this pattern serves as the 6-button identification signature.
 
 ---
 
@@ -205,15 +206,15 @@ The PCEngine Mouse protocol sends 8-bit signed X/Y deltas broken into nibbles ac
 
 Each mouse update requires **4 scans** (states 3 -> 2 -> 1 -> 0):
 
-**High nibble (SEL=LOW)**: Always contains buttons (Run, Select, II, I)
-**Low nibble (SEL=HIGH)**: Contains movement data
+**Nibble 1 (SEL=HIGH)**: Contains movement data nibble
+**Nibble 2 (SEL=LOW)**: Always contains buttons (Run, Select, II, I)
 
-| State | High Nibble (SEL=LOW) | Low Nibble (SEL=HIGH) |
-|-------|------------------------|------------------------|
-| 3 | Buttons | X delta bits 7-4 (high) |
-| 2 | Buttons | X delta bits 3-0 (low) |
-| 1 | Buttons | Y delta bits 7-4 (high) |
-| 0 | Buttons | Y delta bits 3-0 (low) |
+| State | Nibble 1 (SEL=HIGH) | Nibble 2 (SEL=LOW) |
+|-------|----------------------|---------------------|
+| 3 | X delta upper nibble | Buttons |
+| 2 | X delta lower nibble | Buttons |
+| 1 | Y delta upper nibble | Buttons |
+| 0 | Y delta lower nibble | Buttons |
 
 ### Delta Encoding
 
@@ -223,16 +224,16 @@ Each mouse update requires **4 scans** (states 3 -> 2 -> 1 -> 0):
 
 ### Movement Example
 
-**Mouse moved right by 45 pixels, up by 23 pixels**:
+**Mouse moved left by 45 pixels, up by 23 pixels**:
 
-The X delta is 45 (0x2D, binary 0010 1101) and the Y delta is 23 (0x17, binary 0001 0111). These are split into nibbles and sent across four scan states, with the button state occupying the upper four bits (shown as "b") of each byte:
+The X delta is 45 (0x2D, binary 0010 1101) and the Y delta is 23 (0x17, binary 0001 0111). These are split into nibbles and sent across four scan states. The movement nibble is output on SEL=HIGH and buttons on SEL=LOW (shown as "b"):
 
 | State | Byte Layout | Content |
 |-------|-------------|---------|
-| 3 | bbbb 0010 | X high nibble |
-| 2 | bbbb 1101 | X low nibble |
-| 1 | bbbb 0001 | Y high nibble |
-| 0 | bbbb 0111 | Y low nibble |
+| 3 | 0010 bbbb | X upper nibble (SEL=HIGH), buttons (SEL=LOW) |
+| 2 | 1101 bbbb | X lower nibble (SEL=HIGH), buttons (SEL=LOW) |
+| 1 | 0001 bbbb | Y upper nibble (SEL=HIGH), buttons (SEL=LOW) |
+| 0 | 0111 bbbb | Y lower nibble (SEL=HIGH), buttons (SEL=LOW) |
 
 The "b" bits represent the button state (e.g., 1111 if no buttons are pressed).
 
@@ -293,16 +294,17 @@ The multitap advances to the next player after each pair of nibbles (one SEL HIG
 ```
 Time (us)     CLR    SEL     State   Action
 ────────────────────────────────────────────────
-0             HIGH   HIGH    Idle    Waiting for scan
-50            LOW    HIGH    3       CLR falling edge, scan begins
-100           LOW    LOW     3       Output Player 1 D-pad
-150           LOW    HIGH    3       Output Player 1 buttons
-200           LOW    LOW     2       Output Player 2 D-pad
-...           ...    ...     ...     ...
-600           HIGH   HIGH    Reset   CLR rising edge, scan ends
+0             HIGH   HIGH    3       Idle, waiting for scan
+50            LOW    LOW     3       CLR falling edge, scan begins
+100           LOW    HIGH    3       Output Player 1 D-pad
+150           LOW    LOW     3       Output Player 1 buttons
+200           LOW    HIGH    3       Output Player 2 D-pad
+250           LOW    LOW     3       Output Player 2 buttons
+...           ...    ...     3       ...through Player 5
+600           HIGH   HIGH    2       CLR rising edge, scan ends, state advances
 ```
 
-After the CLR rising edge, the controller/multitap resets to Player 1 and the state counter resets.
+The state remains constant for the entire scan (all 5 players). It advances to the next state when CLR goes HIGH. After state 0, the counter wraps back to 3.
 
 ---
 
@@ -310,22 +312,25 @@ After the CLR rising edge, the controller/multitap resets to Player 1 and the st
 
 ### Button Bit Mapping
 
-**Standard Byte** (States 3, 1, 0):
+**Standard Byte** (States 3, 1):
 ```
 Bit:  7     6      5      4    |  3    2       1   0
      Left  Down  Right   Up   | Run  Select   II  I
+     ←── SEL=HIGH (D-pad) ──→   ←── SEL=LOW (Buttons) ──→
 ```
 
-**6-Button Extended** (State 2):
+**6-Button Extended** (States 2, 0):
 ```
-Bit:  7     6     5    4   |  3   2   1   0
-     III   IV    V    VI  |  0   0   0   0
+Bit:  7    6    5    4   |  3    2    1    0
+      0    0    0    0   | VI    V   IV   III
+     ←── SEL=HIGH (0) ─→   ←── SEL=LOW (Ext) ──→
 ```
 
 **Mouse Byte** (per state):
 ```
-Bit:  7     6       5   4   |  3    2    1    0
-     Run  Select   II  I   | [Movement Nibble]
+Bit:  7    6    5    4   |  3       2       1    0
+     [Movement Nibble]   | Run   Select    II    I
+     ←── SEL=HIGH ─────→   ←── SEL=LOW (Buttons) ──→
 ```
 
 ### Connector Pinout Summary
@@ -353,7 +358,6 @@ Bit:  7     6       5   4   |  3    2    1    0
 
 ## References
 
-- [PCEngine Development Wiki](https://www.nesdev.org/wiki/PC_Engine_hardware)
-- [David Shadoff's PCEngine Projects](https://github.com/dshadoff/PC_Engine_RP2040_Projects)
-- [PC Engine Software Bible](http://www.magicengine.com/mkit/doc_hard_pce.html)
+- [PCEngine Controller Info](https://github.com/pce-devel/PCE_Controller_Info) - Authoritative controller protocol documentation by David Shadoff
+- [David Shadoff's PCEngine RP2040 Projects](https://github.com/dshadoff/PC_Engine_RP2040_Projects) - PCEMouse and other RP2040-based PCEngine projects
 - [TurboGrafx-16 Technical Specifications](https://en.wikipedia.org/wiki/TurboGrafx-16)
