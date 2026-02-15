@@ -259,15 +259,36 @@ void input_sony_ds4(uint8_t dev_addr, uint8_t instance, uint8_t const* report, u
 
       // add to accumulator and post to the state machine
       // if a scan from the host machine is ongoing, wait
-      // Battery: offset 29 in data (after report ID) — bits 0-3 = level (0-10), bit 4 = cable
-      // (struct field labeled 'battery' at offset 11 is actually sensor_temperature)
+      // Battery: status[0] at report[29] — bits 0-3 = level, bit 4 = cable connected
+      // Level interpretation differs based on cable state (per Linux kernel hid-playstation.c)
       uint8_t bat_level = 0;
       bool bat_charging = false;
       if (len >= 30) {
         uint8_t raw = report[29];
-        uint8_t level = (raw & 0x0F);
-        bat_level = (level > 10) ? 100 : level * 10;
-        bat_charging = (raw & 0x10) != 0;
+        uint8_t battery_data = (raw & 0x0F);
+        bool cable_connected = (raw & 0x10) != 0;
+
+        if (cable_connected) {
+            if (battery_data < 10) {
+                bat_level = battery_data * 10 + 5;
+                bat_charging = true;
+            } else if (battery_data == 10) {
+                bat_level = 100;
+                bat_charging = true;
+            } else if (battery_data == 11) {
+                bat_level = 100;
+                bat_charging = false;  // Full
+            } else {
+                bat_level = 0;  // Error (14=voltage/temp, 15=charge)
+                bat_charging = false;
+            }
+        } else {
+            if (battery_data < 10)
+                bat_level = battery_data * 10 + 5;
+            else
+                bat_level = 100;
+            bat_charging = false;
+        }
       }
 
       input_event_t event = {

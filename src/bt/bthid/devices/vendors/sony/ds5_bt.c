@@ -433,12 +433,30 @@ static void ds5_process_report(bthid_device_t* device, const uint8_t* data, uint
     }
 
     // Battery: status byte at report_data[52] — bits 0-3 = level (0-10), bits 4-7 = status
+    // Per Linux kernel hid-playstation.c: 0=discharging, 1=charging, 2=full, 0xa/0xb/0xf=error
     if (report_len > 52) {
         uint8_t raw = report_data[52];
         uint8_t level = raw & 0x0F;
         uint8_t status = (raw >> 4) & 0x0F;
-        ds5->event.battery_level = (level > 10) ? 100 : level * 10;
-        ds5->event.battery_charging = (status == 1);
+
+        switch (status) {
+            case 0x0:  // Discharging
+                ds5->event.battery_level = (level > 10) ? 100 : level * 10 + 5;
+                ds5->event.battery_charging = false;
+                break;
+            case 0x1:  // Charging
+                ds5->event.battery_level = (level > 10) ? 100 : level * 10 + 5;
+                ds5->event.battery_charging = true;
+                break;
+            case 0x2:  // Full
+                ds5->event.battery_level = 100;
+                ds5->event.battery_charging = false;
+                break;
+            default:   // 0xa=voltage/temp, 0xb=temp, 0xf=charge error
+                ds5->event.battery_level = 0;
+                ds5->event.battery_charging = false;
+                break;
+        }
     }
 
     // Submit to router

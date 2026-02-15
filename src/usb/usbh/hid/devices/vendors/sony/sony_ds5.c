@@ -175,15 +175,33 @@ void input_sony_ds5(uint8_t dev_addr, uint8_t instance, uint8_t const* report, u
       // keep analog within range [1-255]
       ensureAllNonZero(&analog_1x, &analog_1y, &analog_2x, &analog_2y);
 
-      // Battery: offset 53 in data (after report ID) — bits 0-3 = level (0-10), bits 4-7 = status
+      // Battery: common data offset 52 (after report ID stripped) — bits 0-3 = level (0-10), bits 4-7 = status
+      // Per Linux kernel hid-playstation.c: 0=discharging, 1=charging, 2=full, 0xa/0xb/0xf=error
       uint8_t bat_level = 0;
       bool bat_charging = false;
-      if (len >= 54) {
-        uint8_t raw = report[53];
+      if (len >= 53) {
+        uint8_t raw = report[52];
         uint8_t level = raw & 0x0F;
         uint8_t status = (raw >> 4) & 0x0F;
-        bat_level = (level > 10) ? 100 : level * 10;
-        bat_charging = (status == 1);
+
+        switch (status) {
+            case 0x0:  // Discharging
+                bat_level = (level > 10) ? 100 : level * 10 + 5;
+                bat_charging = false;
+                break;
+            case 0x1:  // Charging
+                bat_level = (level > 10) ? 100 : level * 10 + 5;
+                bat_charging = true;
+                break;
+            case 0x2:  // Full
+                bat_level = 100;
+                bat_charging = false;
+                break;
+            default:   // 0xa=voltage/temp, 0xb=temp, 0xf=charge error
+                bat_level = 0;
+                bat_charging = false;
+                break;
+        }
       }
 
       // add to accumulator and post to the state machine
