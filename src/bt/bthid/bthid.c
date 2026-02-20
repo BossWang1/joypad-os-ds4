@@ -182,23 +182,39 @@ void bthid_update_device_info(uint8_t conn_index, const char* name,
     if (vendor_id) device->vendor_id = vendor_id;
     if (product_id) device->product_id = product_id;
 
-    // Re-evaluate the driver if currently using generic gamepad.
-    // This handles late-arriving info: name from remote name request,
-    // VID/PID from SDP query, or both.
+    // Re-evaluate driver when new info arrives.
+    // Two cases:
+    // 1. Generic driver → try to find a better vendor-specific match
+    // 2. Vendor driver no longer matches (e.g., PID exclusion) → find correct driver
     const bthid_driver_t* current = (const bthid_driver_t*)device->driver;
-    if (current == &bthid_gamepad_driver) {
-        const bt_connection_t* conn = bt_get_connection(conn_index);
-        const uint8_t* cod = conn ? conn->class_of_device : NULL;
+    const bt_connection_t* conn = bt_get_connection(conn_index);
+    const uint8_t* cod = conn ? conn->class_of_device : NULL;
 
+    bool needs_reval = (current == &bthid_gamepad_driver);
+
+    // Check if current vendor driver still matches with updated info
+    if (!needs_reval && current && current->match) {
+        if (!current->match(device->name, cod, device->vendor_id,
+                            device->product_id, device->is_ble)) {
+            needs_reval = true;
+        }
+    }
+
+    if (needs_reval) {
         const bthid_driver_t* new_driver = NULL;
         for (int i = 0; i < driver_count; i++) {
-            if (drivers[i] != &bthid_gamepad_driver &&
+            if (drivers[i] != current &&
                 drivers[i]->match && drivers[i]->match(device->name, cod,
                                                         device->vendor_id, device->product_id,
                                                         device->is_ble)) {
                 new_driver = drivers[i];
                 break;
             }
+        }
+
+        // If no vendor driver matches, fall back to generic
+        if (!new_driver && current != &bthid_gamepad_driver) {
+            new_driver = &bthid_gamepad_driver;
         }
 
         if (new_driver) {

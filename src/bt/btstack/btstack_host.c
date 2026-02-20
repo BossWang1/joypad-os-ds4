@@ -951,6 +951,14 @@ static void sdp_query_vid_pid_callback(uint8_t packet_type, uint16_t channel, ui
                         bthid_update_device_info(i, conn->name,
                                                   classic_state.pending_vid,
                                                   classic_state.pending_pid);
+
+                        // Re-send HID descriptor in case driver was re-evaluated to generic
+                        // (descriptor was delivered earlier but ignored by the previous driver)
+                        const uint8_t* hid_desc = hid_descriptor_storage_get_descriptor_data(conn->hid_cid);
+                        uint16_t hid_desc_len = hid_descriptor_storage_get_descriptor_len(conn->hid_cid);
+                        if (hid_desc && hid_desc_len > 0) {
+                            bthid_set_hid_descriptor(i, hid_desc, hid_desc_len);
+                        }
                         break;
                     }
                 }
@@ -3715,6 +3723,14 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
             // is CONNECTION_ESTABLISHED and hid_host_send_report() will succeed.
             int conn_index = get_classic_conn_index(hid_cid);
             if (conn_index >= 0) {
+                // Pass HID descriptor to bthid for generic gamepad parsing
+                const uint8_t* hid_desc = hid_descriptor_storage_get_descriptor_data(hid_cid);
+                uint16_t hid_desc_len = hid_descriptor_storage_get_descriptor_len(hid_cid);
+                if (hid_desc && hid_desc_len > 0) {
+                    printf("[BTSTACK_HOST] Classic HID descriptor: %d bytes\n", hid_desc_len);
+                    bthid_set_hid_descriptor(conn_index, hid_desc, hid_desc_len);
+                }
+
                 btstack_host_stop_scan();
                 scan_timeout_end = 0;
                 printf("[BTSTACK_HOST] Calling bt_on_hid_ready(%d)\n", conn_index);

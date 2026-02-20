@@ -21,7 +21,7 @@
 // REPORT MAP TYPES (mirrors USB hid_gamepad.c dinput_usage_t)
 // ============================================================================
 
-#define BLE_MAX_BUTTONS 12
+#define BLE_MAX_BUTTONS 16
 
 typedef struct {
     uint8_t byteIndex;
@@ -34,6 +34,7 @@ typedef struct {
     ble_usage_loc_t hatLoc;
     ble_usage_loc_t buttonLoc[BLE_MAX_BUTTONS];
     uint8_t buttonCnt;
+    bool has_sim_triggers;      // true if triggers use Simulation Controls (Xbox-style)
 } ble_report_map_t;
 
 // ============================================================================
@@ -60,6 +61,52 @@ static const uint8_t HAT_SWITCH_TO_DIRECTION_BUTTONS[] = {
 };
 
 // ============================================================================
+// BUTTON USAGE MAPPING TABLES
+// ============================================================================
+
+// Xbox BT HID: buttons 1-15 with gaps at 3,6,9,10
+// A=1, B=2, X=4, Y=5, LB=7, RB=8, View=11, Menu=12, Xbox=13, L3=14, R3=15
+static const uint32_t XBOX_BUTTON_MAP[16] = {
+    0,                  // usage 0: invalid
+    JP_BUTTON_B1,       // usage 1: A
+    JP_BUTTON_B2,       // usage 2: B
+    0,                  // usage 3: (pad)
+    JP_BUTTON_B3,       // usage 4: X
+    JP_BUTTON_B4,       // usage 5: Y
+    0,                  // usage 6: (pad)
+    JP_BUTTON_L1,       // usage 7: LB
+    JP_BUTTON_R1,       // usage 8: RB
+    0,                  // usage 9: (pad)
+    0,                  // usage 10: (pad)
+    JP_BUTTON_S1,       // usage 11: View
+    JP_BUTTON_S2,       // usage 12: Menu
+    JP_BUTTON_A1,       // usage 13: Xbox
+    JP_BUTTON_L3,       // usage 14: L3
+    JP_BUTTON_R3,       // usage 15: R3
+};
+
+// Standard sequential HID gamepads (8BitDo, generic controllers)
+// Button 1-12 map directly to face/shoulder/trigger/meta buttons
+static const uint32_t SEQ_BUTTON_MAP[16] = {
+    0,                  // usage 0: invalid
+    JP_BUTTON_B1,       // usage 1: face 1 (A/Cross)
+    JP_BUTTON_B2,       // usage 2: face 2 (B/Circle)
+    JP_BUTTON_B3,       // usage 3: face 3 (X/Square)
+    JP_BUTTON_B4,       // usage 4: face 4 (Y/Triangle)
+    JP_BUTTON_L1,       // usage 5: left shoulder
+    JP_BUTTON_R1,       // usage 6: right shoulder
+    JP_BUTTON_L2,       // usage 7: left trigger (digital)
+    JP_BUTTON_R2,       // usage 8: right trigger (digital)
+    JP_BUTTON_S1,       // usage 9: select/back
+    JP_BUTTON_S2,       // usage 10: start/menu
+    JP_BUTTON_L3,       // usage 11: left stick
+    JP_BUTTON_R3,       // usage 12: right stick
+    JP_BUTTON_A1,       // usage 13: guide/home
+    0,                  // usage 14: extra
+    0,                  // usage 15: extra
+};
+
+// ============================================================================
 // ANALOG SCALING (same as USB hid_gamepad.c scale_analog_hid_gamepad)
 // ============================================================================
 
@@ -82,8 +129,8 @@ static uint16_t extract_field(const uint8_t* data, uint16_t len, ble_usage_loc_t
     if (!loc->bitMask || loc->byteIndex >= len) return 0;
 
     if (loc->bitMask > 0xFF && (loc->byteIndex + 1) < len) {
-        // 16-bit field spanning two bytes
-        uint16_t combined = ((uint16_t)data[loc->byteIndex] << 8) | data[loc->byteIndex + 1];
+        // 16-bit field spanning two bytes (HID reports are little-endian)
+        uint16_t combined = (uint16_t)data[loc->byteIndex] | ((uint16_t)data[loc->byteIndex + 1] << 8);
         return (combined & loc->bitMask) >> __builtin_ctz(loc->bitMask);
     }
     return data[loc->byteIndex] & loc->bitMask;
@@ -163,6 +210,22 @@ void bthid_gamepad_set_descriptor(bthid_device_t* device, const uint8_t* desc, u
                             break;
                     }
                     break;
+                case 0x02:  // Simulation Controls (Xbox-style triggers)
+                    switch (item->Attributes.Usage.Usage) {
+                        case 0xC5:  // Brake → Left Trigger
+                            gp->map.rxLoc.byteIndex = byteIndex;
+                            gp->map.rxLoc.bitMask = bitMask;
+                            gp->map.rxLoc.max = item->Attributes.Logical.Maximum;
+                            gp->map.has_sim_triggers = true;
+                            break;
+                        case 0xC4:  // Accelerator → Right Trigger
+                            gp->map.ryLoc.byteIndex = byteIndex;
+                            gp->map.ryLoc.bitMask = bitMask;
+                            gp->map.ryLoc.max = item->Attributes.Logical.Maximum;
+                            gp->map.has_sim_triggers = true;
+                            break;
+                    }
+                    break;
                 case 0x09: {  // Button
                     uint8_t usage = item->Attributes.Usage.Usage;
                     if (usage >= 1 && usage <= BLE_MAX_BUTTONS) {
@@ -183,12 +246,12 @@ void bthid_gamepad_set_descriptor(bthid_device_t* device, const uint8_t* desc, u
     USB_FreeReportInfo(info);
 
     gp->has_report_map = true;
-    printf("[BTHID_GAMEPAD] Descriptor parsed: %d buttons, X@%d Y@%d Z@%d RZ@%d RX@%d RY@%d hat@%d\n",
+    printf("[BTHID_GAMEPAD] Descriptor parsed: %d buttons, X@%d Y@%d Z@%d RZ@%d RX@%d RY@%d hat@%d sim_triggers=%d\n",
            btns_count,
            gp->map.xLoc.byteIndex, gp->map.yLoc.byteIndex,
            gp->map.zLoc.byteIndex, gp->map.rzLoc.byteIndex,
            gp->map.rxLoc.byteIndex, gp->map.ryLoc.byteIndex,
-           gp->map.hatLoc.byteIndex);
+           gp->map.hatLoc.byteIndex, gp->map.has_sim_triggers);
 }
 
 // ============================================================================
@@ -234,48 +297,22 @@ static void process_report_dynamic(bthid_gamepad_data_t* gp, const uint8_t* data
         if (dpad & 0x08) buttons |= JP_BUTTON_DL;
     }
 
-    // Extract raw button states
-    uint16_t all_buttons = 0;
+    // Map buttons by HID usage number using descriptor-derived layout detection
+    // Simulation Controls triggers (Brake/Accelerator) = Xbox gap pattern
+    // Generic Desktop triggers (Rx/Ry) = sequential button layout
+    const uint32_t* btn_map = map->has_sim_triggers ? XBOX_BUTTON_MAP : SEQ_BUTTON_MAP;
+
+    uint8_t buttonCount = 0;
     for (int i = 0; i < BLE_MAX_BUTTONS; i++) {
-        if (map->buttonLoc[i].bitMask &&
-            map->buttonLoc[i].byteIndex < len &&
-            (data[map->buttonLoc[i].byteIndex] & map->buttonLoc[i].bitMask)) {
-            all_buttons |= (1 << i);
-        }
-    }
-
-    // DirectInput button mapping (same logic as USB hid_gamepad.c)
-    uint8_t buttonCount = map->buttonCnt;
-    if (buttonCount > 12) buttonCount = 12;
-
-    if (buttonCount >= 10) {
-        // Standard DirectInput: buttons 1-8 are face/shoulder, 9=select, 10=start
-        buttons |= (all_buttons & (1 << 1)) ? JP_BUTTON_B1 : 0;  // button2 -> B1
-        buttons |= (all_buttons & (1 << 2)) ? JP_BUTTON_B2 : 0;  // button3 -> B2
-        buttons |= (all_buttons & (1 << 0)) ? JP_BUTTON_B3 : 0;  // button1 -> B3 (remap)
-        buttons |= (all_buttons & (1 << 3)) ? JP_BUTTON_B4 : 0;  // button4 -> B4 (remap)
-        buttons |= (all_buttons & (1 << 4)) ? JP_BUTTON_L1 : 0;  // button5
-        buttons |= (all_buttons & (1 << 5)) ? JP_BUTTON_R1 : 0;  // button6
-        buttons |= (all_buttons & (1 << 6)) ? JP_BUTTON_L2 : 0;  // button7
-        buttons |= (all_buttons & (1 << 7)) ? JP_BUTTON_R2 : 0;  // button8
-        buttons |= (all_buttons & (1 << 8)) ? JP_BUTTON_S1 : 0;  // button9 = select
-        buttons |= (all_buttons & (1 << 9)) ? JP_BUTTON_S2 : 0;  // button10 = start
-        buttons |= (all_buttons & (1 << 10)) ? JP_BUTTON_L3 : 0; // button11
-        buttons |= (all_buttons & (1 << 11)) ? JP_BUTTON_R3 : 0; // button12
-    } else {
-        // Fewer buttons: direct 1:1 mapping
-        buttons |= (all_buttons & (1 << 0)) ? JP_BUTTON_B1 : 0;
-        buttons |= (all_buttons & (1 << 1)) ? JP_BUTTON_B2 : 0;
-        buttons |= (all_buttons & (1 << 2)) ? JP_BUTTON_B3 : 0;
-        buttons |= (all_buttons & (1 << 3)) ? JP_BUTTON_B4 : 0;
-        if (buttonCount >= 7)  buttons |= (all_buttons & (1 << 4)) ? JP_BUTTON_L1 : 0;
-        if (buttonCount >= 8)  buttons |= (all_buttons & (1 << 5)) ? JP_BUTTON_R1 : 0;
-        if (buttonCount >= 9)  buttons |= (all_buttons & (1 << 6)) ? JP_BUTTON_L2 : 0;
-        if (buttonCount >= 10) buttons |= (all_buttons & (1 << 7)) ? JP_BUTTON_R2 : 0;
-        // Select/Start are the last two buttons
-        if (buttonCount >= 2) {
-            buttons |= (all_buttons & (1 << (buttonCount - 2))) ? JP_BUTTON_S1 : 0;
-            buttons |= (all_buttons & (1 << (buttonCount - 1))) ? JP_BUTTON_S2 : 0;
+        if (map->buttonLoc[i].bitMask) {
+            buttonCount++;
+            if (map->buttonLoc[i].byteIndex < len &&
+                (data[map->buttonLoc[i].byteIndex] & map->buttonLoc[i].bitMask)) {
+                uint8_t usage = i + 1;  // usage number = slot index + 1
+                if (usage < 16) {
+                    buttons |= btn_map[usage];
+                }
+            }
         }
     }
 

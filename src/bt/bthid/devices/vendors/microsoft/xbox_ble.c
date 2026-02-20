@@ -57,10 +57,15 @@ static bool xbox_ble_match(const char* device_name, const uint8_t* class_of_devi
                            uint16_t vendor_id, uint16_t product_id, bool is_ble)
 {
     (void)class_of_device;
-    (void)product_id;
 
     // Only match BLE connections — Classic BT Xbox controllers use xbox_bt driver
     if (!is_ble) {
+        return false;
+    }
+
+    // Xbox Elite Series 2 has a non-standard HID report layout —
+    // let the generic gamepad driver handle it via HID descriptor parsing
+    if (vendor_id == 0x045E && (product_id == 0x0B05 || product_id == 0x0B22)) {
         return false;
     }
 

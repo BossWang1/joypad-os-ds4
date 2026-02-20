@@ -111,8 +111,13 @@ static bool xbox_match(const char* device_name, const uint8_t* class_of_device,
                        uint16_t vendor_id, uint16_t product_id, bool is_ble)
 {
     (void)class_of_device;
-    (void)product_id;
     (void)is_ble;
+
+    // Xbox Elite Series 2 has a non-standard HID report layout —
+    // let the generic gamepad driver handle it via HID descriptor parsing
+    if (vendor_id == 0x045E && (product_id == 0x0B05 || product_id == 0x0B22)) {
+        return false;
+    }
 
     // VID match - Microsoft vendor ID = 0x045E
     // Many Xbox controller PIDs exist, so just match VID
@@ -169,6 +174,24 @@ static void xbox_process_report(bthid_device_t* device, const uint8_t* data, uin
 {
     xbox_bt_data_t* xbox = (xbox_bt_data_t*)device->driver_data;
     if (!xbox || len < 2) return;
+
+    // Debug: dump first report for diagnostics
+    static bool xbox_report_debug_done = false;
+    if (!xbox_report_debug_done) {
+        printf("[XBOX_BT] First report: len=%d, data:", len);
+        for (int i = 0; i < len && i < 20; i++) {
+            printf(" %02X", data[i]);
+        }
+        printf("\n");
+        xbox_report_debug_done = true;
+    }
+
+    // Only parse report ID 0x01 (standard gamepad input)
+    // Other report IDs (battery, system, etc.) have different layouts
+    uint8_t report_id = data[0];
+    if (report_id != 0x01) {
+        return;
+    }
 
     uint32_t buttons = 0x00000000;
     uint8_t lx = 128, ly = 128, rx = 128, ry = 128;
