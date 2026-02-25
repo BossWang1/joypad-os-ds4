@@ -6,6 +6,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.9.0] — 2026-02-25
+
+### Added
+- **N64 console output** — new `bt2n64` (Pico W / Pico 2 W) and `usb2n64` (KB2040) apps using joybus-pio N64Console C API (not yet in CI release builds)
+- **Nuon console output** — new `bt2nuon` and `n642nuon` apps for Nuon controller output via Polyface protocol (not yet in CI release builds)
+- **ESP32-S3 bt2usb support** — BLE controllers to USB HID on ESP32-S3 with TinyUF2 drag-and-drop firmware updates
+- **ESP32-S3 bt2usb UF2** added to CI build and release workflow
+- **Battery level reporting** for DS3 (USB + BT), DS4/DS5 (via SInput), Switch Pro Controller, and Wii U Pro Controller
+- **BLE Battery Service integration** for automatic battery reporting on BLE controllers
+- **DS4/DS5 touchpad pass-through** to SInput
+- **neogeo2usb** — Neo Geo+ to USB adapter with D-pad mode hotkeys, RP2040-Zero support, and documentation (community contribution by herzmx)
+- **Generic HID descriptor-driven Xbox BT driver** — replaces vendor-specific Xbox BT drivers with unified HID parser approach
+
+### Fixed
+- **Xbox BT overhaul** — replaced vendor drivers with generic HID descriptor-driven gamepad parsing; fixed button masks, D-pad parsing, Share button, and Elite BT parsing
+- **Xbox Classic BT connection timeout** on CYW43
+- **Switch Pro BT pairing, reconnection, and analog parsing** on CYW43
+- **Sony BT reconnection** on CYW43 dual-path conflict
+- **SET_REPORT failing** for Sony controllers on CYW43 direct L2CAP path
+- **DS4 clone hanging Pico W** by skipping SDP over CYW43
+- **DS5 BT battery offset** (53 → 52) and Sony battery parsing for USB offset and charging states
+- **SInput feature report** not updating on BT controller swap
+- **L2/R2 pressure missing** for digital-only trigger controllers
+- **ESP32 button GPIO** and `tud_task()` blocking on mode switch
+- **Generic HID gamepad parsing** for Xbox-style controllers
+- **Broken docs links** in README, HARDWARE.md, and INSTALLATION.md
+- **PCEngine protocol doc** — fixed 8 factual errors
+- **CI cleanup** — delete intermediate firmware artifacts after collect
+
+### Changed
+- BLE generic gamepad driver now reuses USB HID parser for consistency
+
+---
+
 ## [1.8.0] — 2026-02-15
 
 ### Added
