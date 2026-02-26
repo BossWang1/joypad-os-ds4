@@ -13,6 +13,7 @@
 #include "core/router/router.h"
 #include "core/buttons.h"
 #include "core/services/players/manager.h"
+#include "core/services/players/feedback.h"
 #include "usb/usbh/hid/devices/generic/hid_parser.h"
 #include <string.h>
 #include <stdio.h>
@@ -21,7 +22,7 @@
 // REPORT MAP TYPES (mirrors USB hid_gamepad.c dinput_usage_t)
 // ============================================================================
 
-#define BLE_MAX_BUTTONS 12
+#define BLE_MAX_BUTTONS 16
 
 typedef struct {
     uint8_t byteIndex;
@@ -32,8 +33,12 @@ typedef struct {
 typedef struct {
     ble_usage_loc_t xLoc, yLoc, zLoc, rzLoc, rxLoc, ryLoc;
     ble_usage_loc_t hatLoc;
+    uint8_t hat_min;            // Logical Minimum of hat (0 or 1)
     ble_usage_loc_t buttonLoc[BLE_MAX_BUTTONS];
     uint8_t buttonCnt;
+    uint8_t report_id;          // Expected gamepad input report ID (0 = none)
+    bool has_sim_triggers;      // true if triggers use Simulation Controls (Xbox-style)
+    bool is_xbox;               // true if Microsoft VID (0x045E) — affects button map
 } ble_report_map_t;
 
 // ============================================================================
@@ -45,6 +50,8 @@ typedef struct {
     bool initialized;
     bool has_report_map;        // true if HID descriptor was parsed
     ble_report_map_t map;       // cached field locations from descriptor
+    uint8_t rumble_left;        // Last sent rumble values (for change detection)
+    uint8_t rumble_right;
 } bthid_gamepad_data_t;
 
 static bthid_gamepad_data_t gamepad_data[BTHID_MAX_DEVICES];
@@ -57,6 +64,73 @@ static bthid_gamepad_data_t gamepad_data[BTHID_MAX_DEVICES];
 
 static const uint8_t HAT_SWITCH_TO_DIRECTION_BUTTONS[] = {
     0b0001, 0b0011, 0b0010, 0b0110, 0b0100, 0b1100, 0b1000, 0b1001, 0b0000
+};
+
+// ============================================================================
+// BUTTON USAGE MAPPING TABLES
+// ============================================================================
+
+// Xbox BT HID: buttons 1-15 with gaps at 3,6,9,10
+// A=1, B=2, X=4, Y=5, LB=7, RB=8, View=11, Menu=12, Xbox=13, L3=14, R3=15
+static const uint32_t XBOX_BUTTON_MAP[17] = {
+    0,                  // usage 0: invalid
+    JP_BUTTON_B1,       // usage 1: A
+    JP_BUTTON_B2,       // usage 2: B
+    0,                  // usage 3: (pad)
+    JP_BUTTON_B3,       // usage 4: X
+    JP_BUTTON_B4,       // usage 5: Y
+    0,                  // usage 6: (pad)
+    JP_BUTTON_L1,       // usage 7: LB
+    JP_BUTTON_R1,       // usage 8: RB
+    0,                  // usage 9: (pad)
+    0,                  // usage 10: (pad)
+    JP_BUTTON_S1,       // usage 11: View
+    JP_BUTTON_S2,       // usage 12: Menu
+    JP_BUTTON_A1,       // usage 13: Xbox
+    JP_BUTTON_L3,       // usage 14: L3
+    JP_BUTTON_R3,       // usage 15: R3
+    JP_BUTTON_A2,       // usage 16: Share (Series X/S)
+};
+
+// Xbox Classic BT: sequential buttons 1-15 (no gaps like BLE), different order from generic
+static const uint32_t XBOX_SEQ_BUTTON_MAP[16] = {
+    0,                  // usage 0: invalid
+    JP_BUTTON_B1,       // usage 1: A
+    JP_BUTTON_B2,       // usage 2: B
+    JP_BUTTON_B3,       // usage 3: X
+    JP_BUTTON_B4,       // usage 4: Y
+    JP_BUTTON_L1,       // usage 5: LB
+    JP_BUTTON_R1,       // usage 6: RB
+    JP_BUTTON_S1,       // usage 7: Back/View
+    JP_BUTTON_S2,       // usage 8: Start/Menu
+    JP_BUTTON_L3,       // usage 9: L3
+    JP_BUTTON_R3,       // usage 10: R3
+    JP_BUTTON_A1,       // usage 11: Guide
+    0,                  // usage 12
+    0,                  // usage 13
+    0,                  // usage 14
+    JP_BUTTON_A2,       // usage 15: Share (Series X/S)
+};
+
+// Standard sequential HID gamepads (8BitDo, generic controllers)
+// Button 1-12 map directly to face/shoulder/trigger/meta buttons
+static const uint32_t SEQ_BUTTON_MAP[16] = {
+    0,                  // usage 0: invalid
+    JP_BUTTON_B1,       // usage 1: face 1 (A/Cross)
+    JP_BUTTON_B2,       // usage 2: face 2 (B/Circle)
+    JP_BUTTON_B3,       // usage 3: face 3 (X/Square)
+    JP_BUTTON_B4,       // usage 4: face 4 (Y/Triangle)
+    JP_BUTTON_L1,       // usage 5: left shoulder
+    JP_BUTTON_R1,       // usage 6: right shoulder
+    JP_BUTTON_L2,       // usage 7: left trigger (digital)
+    JP_BUTTON_R2,       // usage 8: right trigger (digital)
+    JP_BUTTON_S1,       // usage 9: select/back
+    JP_BUTTON_S2,       // usage 10: start/menu
+    JP_BUTTON_L3,       // usage 11: left stick
+    JP_BUTTON_R3,       // usage 12: right stick
+    JP_BUTTON_A1,       // usage 13: guide/home
+    0,                  // usage 14: extra
+    0,                  // usage 15: extra
 };
 
 // ============================================================================
@@ -81,12 +155,14 @@ static uint16_t extract_field(const uint8_t* data, uint16_t len, ble_usage_loc_t
 {
     if (!loc->bitMask || loc->byteIndex >= len) return 0;
 
+    uint16_t raw;
     if (loc->bitMask > 0xFF && (loc->byteIndex + 1) < len) {
-        // 16-bit field spanning two bytes
-        uint16_t combined = ((uint16_t)data[loc->byteIndex] << 8) | data[loc->byteIndex + 1];
-        return (combined & loc->bitMask) >> __builtin_ctz(loc->bitMask);
+        // 16-bit field spanning two bytes (HID reports are little-endian)
+        raw = (uint16_t)data[loc->byteIndex] | ((uint16_t)data[loc->byteIndex + 1] << 8);
+    } else {
+        raw = data[loc->byteIndex];
     }
-    return data[loc->byteIndex] & loc->bitMask;
+    return (raw & loc->bitMask) >> __builtin_ctz(loc->bitMask);
 }
 
 void bthid_gamepad_set_descriptor(bthid_device_t* device, const uint8_t* desc, uint16_t desc_len)
@@ -114,6 +190,7 @@ void bthid_gamepad_set_descriptor(bthid_device_t* device, const uint8_t* desc, u
     // Check if report uses report IDs
     if (item && item->ReportID) {
         idOffset = 8;  // Report ID takes first byte (8 bits)
+        gp->map.report_id = item->ReportID;
     }
 
     while (item) {
@@ -160,6 +237,23 @@ void bthid_gamepad_set_descriptor(bthid_device_t* device, const uint8_t* desc, u
                         case 0x39:  // Hat switch
                             gp->map.hatLoc.byteIndex = byteIndex;
                             gp->map.hatLoc.bitMask = bitMask;
+                            gp->map.hat_min = (uint8_t)item->Attributes.Logical.Minimum;
+                            break;
+                    }
+                    break;
+                case 0x02:  // Simulation Controls (Xbox-style triggers)
+                    switch (item->Attributes.Usage.Usage) {
+                        case 0xC5:  // Brake → Left Trigger
+                            gp->map.rxLoc.byteIndex = byteIndex;
+                            gp->map.rxLoc.bitMask = bitMask;
+                            gp->map.rxLoc.max = item->Attributes.Logical.Maximum;
+                            gp->map.has_sim_triggers = true;
+                            break;
+                        case 0xC4:  // Accelerator → Right Trigger
+                            gp->map.ryLoc.byteIndex = byteIndex;
+                            gp->map.ryLoc.bitMask = bitMask;
+                            gp->map.ryLoc.max = item->Attributes.Logical.Maximum;
+                            gp->map.has_sim_triggers = true;
                             break;
                     }
                     break;
@@ -182,13 +276,22 @@ void bthid_gamepad_set_descriptor(bthid_device_t* device, const uint8_t* desc, u
     // Release parser memory
     USB_FreeReportInfo(info);
 
+    gp->map.is_xbox = (device->vendor_id == 0x045E);
     gp->has_report_map = true;
-    printf("[BTHID_GAMEPAD] Descriptor parsed: %d buttons, X@%d Y@%d Z@%d RZ@%d RX@%d RY@%d hat@%d\n",
+    printf("[BTHID_GAMEPAD] Parsed: %d btns, X@%d Y@%d Z@%d RZ@%d hat@%d(min=%d) sim=%d xbox=%d\n",
            btns_count,
            gp->map.xLoc.byteIndex, gp->map.yLoc.byteIndex,
            gp->map.zLoc.byteIndex, gp->map.rzLoc.byteIndex,
-           gp->map.rxLoc.byteIndex, gp->map.ryLoc.byteIndex,
-           gp->map.hatLoc.byteIndex);
+           gp->map.hatLoc.byteIndex, gp->map.hat_min, gp->map.has_sim_triggers,
+           gp->map.is_xbox);
+}
+
+void bthid_gamepad_update_vid(bthid_device_t* device)
+{
+    bthid_gamepad_data_t* gp = (bthid_gamepad_data_t*)device->driver_data;
+    if (!gp || !gp->has_report_map) return;
+
+    gp->map.is_xbox = (device->vendor_id == 0x045E);
 }
 
 // ============================================================================
@@ -224,9 +327,18 @@ static void process_report_dynamic(bthid_gamepad_data_t* gp, const uint8_t* data
     }
 
     // Hat switch -> dpad
+    // Table is 0-based: [0]=N, [1]=NE, ..., [7]=NW, [8]=center
+    // HID descriptors use either min=0 (0=N) or min=1 (1=N, 0=center)
     if (map->hatLoc.bitMask && map->hatLoc.byteIndex < len) {
-        uint8_t hatValue = data[map->hatLoc.byteIndex] & map->hatLoc.bitMask;
-        uint8_t direction = hatValue <= 8 ? hatValue : 8;
+        uint8_t hatValue = (uint8_t)extract_field(data, len, &map->hatLoc);
+        uint8_t direction;
+        if (map->hat_min > 0) {
+            // 1-based hat: value 0 and values > max are center
+            direction = (hatValue >= map->hat_min && hatValue <= map->hat_min + 7)
+                        ? (hatValue - map->hat_min) : 8;
+        } else {
+            direction = hatValue <= 8 ? hatValue : 8;
+        }
         uint8_t dpad = HAT_SWITCH_TO_DIRECTION_BUTTONS[direction];
         if (dpad & 0x01) buttons |= JP_BUTTON_DU;
         if (dpad & 0x02) buttons |= JP_BUTTON_DR;
@@ -234,48 +346,46 @@ static void process_report_dynamic(bthid_gamepad_data_t* gp, const uint8_t* data
         if (dpad & 0x08) buttons |= JP_BUTTON_DL;
     }
 
-    // Extract raw button states
-    uint16_t all_buttons = 0;
+    // Map buttons by HID usage number using descriptor-derived layout detection
+    // Simulation Controls triggers (Brake/Accelerator) = Xbox gap pattern
+    // Generic Desktop triggers (Rx/Ry) = sequential button layout
+    const uint32_t* btn_map;
+    uint8_t btn_map_size;
+    if (map->has_sim_triggers) {
+        // Xbox BLE: gap-pattern buttons with Simulation Controls triggers
+        btn_map = XBOX_BUTTON_MAP;
+        btn_map_size = sizeof(XBOX_BUTTON_MAP) / sizeof(XBOX_BUTTON_MAP[0]);
+    } else if (map->is_xbox) {
+        // Xbox Classic BT: sequential buttons (no gaps), different order
+        btn_map = XBOX_SEQ_BUTTON_MAP;
+        btn_map_size = sizeof(XBOX_SEQ_BUTTON_MAP) / sizeof(XBOX_SEQ_BUTTON_MAP[0]);
+    } else {
+        btn_map = SEQ_BUTTON_MAP;
+        btn_map_size = sizeof(SEQ_BUTTON_MAP) / sizeof(SEQ_BUTTON_MAP[0]);
+    }
+
+    uint8_t buttonCount = 0;
     for (int i = 0; i < BLE_MAX_BUTTONS; i++) {
-        if (map->buttonLoc[i].bitMask &&
-            map->buttonLoc[i].byteIndex < len &&
-            (data[map->buttonLoc[i].byteIndex] & map->buttonLoc[i].bitMask)) {
-            all_buttons |= (1 << i);
+        if (map->buttonLoc[i].bitMask) {
+            buttonCount++;
+            if (map->buttonLoc[i].byteIndex < len &&
+                (data[map->buttonLoc[i].byteIndex] & map->buttonLoc[i].bitMask)) {
+                uint8_t usage = i + 1;  // usage number = slot index + 1
+                if (usage < btn_map_size) {
+                    buttons |= btn_map[usage];
+                }
+            }
         }
     }
 
-    // DirectInput button mapping (same logic as USB hid_gamepad.c)
-    uint8_t buttonCount = map->buttonCnt;
-    if (buttonCount > 12) buttonCount = 12;
-
-    if (buttonCount >= 10) {
-        // Standard DirectInput: buttons 1-8 are face/shoulder, 9=select, 10=start
-        buttons |= (all_buttons & (1 << 1)) ? JP_BUTTON_B1 : 0;  // button2 -> B1
-        buttons |= (all_buttons & (1 << 2)) ? JP_BUTTON_B2 : 0;  // button3 -> B2
-        buttons |= (all_buttons & (1 << 0)) ? JP_BUTTON_B3 : 0;  // button1 -> B3 (remap)
-        buttons |= (all_buttons & (1 << 3)) ? JP_BUTTON_B4 : 0;  // button4 -> B4 (remap)
-        buttons |= (all_buttons & (1 << 4)) ? JP_BUTTON_L1 : 0;  // button5
-        buttons |= (all_buttons & (1 << 5)) ? JP_BUTTON_R1 : 0;  // button6
-        buttons |= (all_buttons & (1 << 6)) ? JP_BUTTON_L2 : 0;  // button7
-        buttons |= (all_buttons & (1 << 7)) ? JP_BUTTON_R2 : 0;  // button8
-        buttons |= (all_buttons & (1 << 8)) ? JP_BUTTON_S1 : 0;  // button9 = select
-        buttons |= (all_buttons & (1 << 9)) ? JP_BUTTON_S2 : 0;  // button10 = start
-        buttons |= (all_buttons & (1 << 10)) ? JP_BUTTON_L3 : 0; // button11
-        buttons |= (all_buttons & (1 << 11)) ? JP_BUTTON_R3 : 0; // button12
-    } else {
-        // Fewer buttons: direct 1:1 mapping
-        buttons |= (all_buttons & (1 << 0)) ? JP_BUTTON_B1 : 0;
-        buttons |= (all_buttons & (1 << 1)) ? JP_BUTTON_B2 : 0;
-        buttons |= (all_buttons & (1 << 2)) ? JP_BUTTON_B3 : 0;
-        buttons |= (all_buttons & (1 << 3)) ? JP_BUTTON_B4 : 0;
-        if (buttonCount >= 7)  buttons |= (all_buttons & (1 << 4)) ? JP_BUTTON_L1 : 0;
-        if (buttonCount >= 8)  buttons |= (all_buttons & (1 << 5)) ? JP_BUTTON_R1 : 0;
-        if (buttonCount >= 9)  buttons |= (all_buttons & (1 << 6)) ? JP_BUTTON_L2 : 0;
-        if (buttonCount >= 10) buttons |= (all_buttons & (1 << 7)) ? JP_BUTTON_R2 : 0;
-        // Select/Start are the last two buttons
-        if (buttonCount >= 2) {
-            buttons |= (all_buttons & (1 << (buttonCount - 2))) ? JP_BUTTON_S1 : 0;
-            buttons |= (all_buttons & (1 << (buttonCount - 1))) ? JP_BUTTON_S2 : 0;
+    // Xbox extra byte: last byte of report, bit 0 (outside HID buttons bitfield)
+    // BLE (Series): Share button → A2
+    // Classic BT (One): Back/View button → S1
+    if (map->is_xbox && len > 0 && (data[len - 1] & 0x01)) {
+        if (gp->event.transport == INPUT_TRANSPORT_BT_BLE) {
+            buttons |= JP_BUTTON_A2;
+        } else {
+            buttons |= JP_BUTTON_S1;
         }
     }
 
@@ -371,6 +481,11 @@ static void gamepad_process_report(bthid_device_t* device, const uint8_t* data, 
 
     // Dynamic path: use parsed HID descriptor for field extraction
     if (gp->has_report_map) {
+        // Filter by report ID — skip non-gamepad reports (battery, feature, etc.)
+        // that would otherwise be parsed as gamepad data with wrong byte layout
+        if (gp->map.report_id && len > 0 && data[0] != gp->map.report_id) {
+            return;
+        }
         process_report_dynamic(gp, data, len);
         return;
     }
@@ -412,10 +527,46 @@ static void gamepad_process_report(bthid_device_t* device, const uint8_t* data, 
     router_submit_input(&gp->event);
 }
 
+// Xbox rumble output report constants
+#define XBOX_RUMBLE_REPORT_ID   0x03
+#define XBOX_RUMBLE_MOTORS      0x03  // Enable strong (bit 1) + weak (bit 0) main motors
+
 static void gamepad_task(bthid_device_t* device)
 {
-    (void)device;
-    // Nothing periodic for generic gamepad
+    bthid_gamepad_data_t* gp = (bthid_gamepad_data_t*)device->driver_data;
+    if (!gp) return;
+
+    int player_idx = find_player_index(gp->event.dev_addr, gp->event.instance);
+    if (player_idx < 0) return;
+
+    feedback_state_t* fb = feedback_get_state(player_idx);
+    if (!fb || !fb->rumble_dirty) return;
+
+    uint8_t left = fb->rumble.left;
+    uint8_t right = fb->rumble.right;
+
+    if (left != gp->rumble_left || right != gp->rumble_right) {
+        // Xbox controllers (VID 0x045E): Report ID 0x03, 8 bytes
+        // [0]=enable_actuators, [1]=lt_trigger, [2]=rt_trigger,
+        // [3]=strong_motor, [4]=weak_motor, [5]=duration, [6]=delay, [7]=repeat
+        if (device->vendor_id == 0x045E) {
+            uint8_t buf[8];
+            buf[0] = XBOX_RUMBLE_MOTORS;
+            buf[1] = 0;                              // Left trigger (unused)
+            buf[2] = 0;                              // Right trigger (unused)
+            buf[3] = ((uint16_t)left * 100) / 255;   // Strong motor (0-100)
+            buf[4] = ((uint16_t)right * 100) / 255;  // Weak motor (0-100)
+            buf[5] = 0xFF;                           // Duration: continuous
+            buf[6] = 0x00;                           // Delay: none
+            buf[7] = 0x00;                           // Repeat: none
+            bthid_send_output_report(device->conn_index, XBOX_RUMBLE_REPORT_ID, buf, sizeof(buf));
+        }
+
+        gp->rumble_left = left;
+        gp->rumble_right = right;
+    }
+
+    feedback_clear_dirty(player_idx);
 }
 
 static void gamepad_disconnect(bthid_device_t* device)

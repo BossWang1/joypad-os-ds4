@@ -30,6 +30,9 @@
 #define XBOX_BLE_GUIDE           0x1000  // Xbox button
 #define XBOX_BLE_LEFT_THUMB      0x2000  // L3
 #define XBOX_BLE_RIGHT_THUMB     0x4000  // R3
+// Share button: NOT in the buttons bitfield — sent as byte 15 (bit 0) of the
+// 16-byte report, replacing what was padding on pre-Series controllers
+#define XBOX_BLE_SHARE           0x01
 
 // Rumble output report (Report ID 0x03, 8 bytes)
 #define XBOX_BLE_REPORT_RUMBLE    0x03
@@ -57,10 +60,15 @@ static bool xbox_ble_match(const char* device_name, const uint8_t* class_of_devi
                            uint16_t vendor_id, uint16_t product_id, bool is_ble)
 {
     (void)class_of_device;
-    (void)product_id;
 
     // Only match BLE connections — Classic BT Xbox controllers use xbox_bt driver
     if (!is_ble) {
+        return false;
+    }
+
+    // Xbox Elite Series 2 has a non-standard HID report layout —
+    // let the generic gamepad driver handle it via HID descriptor parsing
+    if (vendor_id == 0x045E && (product_id == 0x0B05 || product_id == 0x0B22)) {
         return false;
     }
 
@@ -137,11 +145,15 @@ static void xbox_ble_process_report(bthid_device_t* device, const uint8_t* data,
         report_len--;
     }
 
-    if (report_len < 16) {
-        return;  // Too short
+    // Standard Xbox BLE report is exactly 16 bytes. Some Xbox controllers
+    // (e.g., Elite Series 2) have a different HID report layout with longer
+    // reports. Fall back to the generic gamepad driver which parses the HID
+    // descriptor to handle any layout.
+    if (report_len != 16) {
+        printf("[XBOX_BLE] Unexpected report size %d (expected 16), falling back to generic\n", report_len);
+        bthid_fallback_to_generic(device->conn_index);
+        return;
     }
-
-    if (report_len < 16) return;
 
     // Parse bytes directly - Xbox BLE report layout:
     // 0-1:lx, 2-3:ly, 4-5:rx, 6-7:ry, 8-9:lt, 10-11:rt, 12:hat, 13-14:buttons
@@ -186,6 +198,9 @@ static void xbox_ble_process_report(bthid_device_t* device, const uint8_t* data,
     if (btn & XBOX_BLE_LEFT_THUMB)     buttons |= JP_BUTTON_L3;
     if (btn & XBOX_BLE_RIGHT_THUMB)    buttons |= JP_BUTTON_R3;
     if (btn & XBOX_BLE_GUIDE)          buttons |= JP_BUTTON_A1;
+
+    // Share button: byte 15 of the 16-byte report (replaces padding on Series X/S)
+    if (report[15] & XBOX_BLE_SHARE)   buttons |= JP_BUTTON_A2;
 
     // Fill event struct
     xbox->event.buttons = buttons;

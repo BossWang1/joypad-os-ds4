@@ -254,14 +254,22 @@ static bool sinput_mode_send_report(uint8_t player_index,
     (void)player_index;
 
     // Update device face style from connected controller
+    uint8_t prev_type = cached_gamepad_type;
     update_device_info(event->dev_addr, event->instance, event->transport);
 
     // Track capabilities from input device
+    bool prev_motion = cached_has_motion;
+    bool prev_touch = cached_has_touch;
     cached_has_motion = event->has_motion;
     cached_has_touch = event->has_touch;
 
-    // Send feature report automatically when a new device connects
-    if (event->dev_addr != last_dev_addr) {
+    // Send feature report when device changes (new address, different type,
+    // or capability change). BT controllers reuse conn_index slots, so
+    // address alone is not sufficient to detect a new device.
+    if (event->dev_addr != last_dev_addr ||
+        cached_gamepad_type != prev_type ||
+        cached_has_motion != prev_motion ||
+        cached_has_touch != prev_touch) {
         last_dev_addr = event->dev_addr;
         feature_request_pending = true;
     }

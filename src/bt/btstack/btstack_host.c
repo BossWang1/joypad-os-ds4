@@ -951,6 +951,14 @@ static void sdp_query_vid_pid_callback(uint8_t packet_type, uint16_t channel, ui
                         bthid_update_device_info(i, conn->name,
                                                   classic_state.pending_vid,
                                                   classic_state.pending_pid);
+
+                        // Re-send HID descriptor in case driver was re-evaluated to generic
+                        // (descriptor was delivered earlier but ignored by the previous driver)
+                        const uint8_t* hid_desc = hid_descriptor_storage_get_descriptor_data(conn->hid_cid);
+                        uint16_t hid_desc_len = hid_descriptor_storage_get_descriptor_len(conn->hid_cid);
+                        if (hid_desc && hid_desc_len > 0) {
+                            bthid_set_hid_descriptor(i, hid_desc, hid_desc_len);
+                        }
                         break;
                     }
                 }
@@ -1476,7 +1484,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         // authentication when creating HID L2CAP channels after SDP.
                         // Requesting auth here concurrently with SDP causes CYW43 SPI
                         // bus failures on devices with large HID descriptors (DS4 clones).
-                        if (classic_state.pending_hid_connect) {
+                        if (classic_state.pending_hid_connect && wiimote_conn.active) {
                             gap_request_security_level(handle, LEVEL_2);
                         }
                     } else {
@@ -1554,9 +1562,11 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                             // Request remote name for driver matching (we don't have it from inquiry)
                             gap_remote_name_request(addr, 0, 0);
 
-                            // Query VID/PID via SDP (PnP Information service)
-                            sdp_client_query_uuid16(&sdp_query_vid_pid_callback, addr,
-                                                    BLUETOOTH_SERVICE_CLASS_PNP_INFORMATION);
+                            // Don't query VID/PID via SDP here — BTstack HID Host runs its
+                            // own SDP query after accepting the incoming connection, and the
+                            // SDP client only handles one query at a time. Our VID/PID query
+                            // would delay HID Host's descriptor query. Instead, query VID/PID
+                            // at HID_SUBEVENT_CONNECTION_OPENED after HID channels are established.
 
                             // Request authentication only if we have a stored key (reconnection).
                             // For new pairings (no key), defer auth to after name resolution
@@ -3496,8 +3506,17 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
                 break;
             }
 
-            printf("[BTSTACK_HOST] HID incoming connection, cid=0x%04X - accepting\n", hid_cid);
-            hid_host_accept_connection(hid_cid, HID_PROTOCOL_MODE_REPORT);
+            // Determine protocol mode from device profile (if name is available)
+            hid_protocol_mode_t accept_mode = HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT;
+            if (classic_state.pending_valid && classic_state.pending_name[0]) {
+                const bt_device_profile_t* profile = bt_device_lookup_by_name(classic_state.pending_name);
+                if (profile->hid_mode == BT_HID_MODE_REPORT) {
+                    accept_mode = HID_PROTOCOL_MODE_REPORT;
+                }
+            }
+            printf("[BTSTACK_HOST] HID incoming connection, cid=0x%04X - accepting (mode=%s)\n",
+                   hid_cid, accept_mode == HID_PROTOCOL_MODE_REPORT ? "REPORT" : "FALLBACK");
+            hid_host_accept_connection(hid_cid, accept_mode);
 
             // Allocate connection slot if needed
             if (!find_classic_connection_by_cid(hid_cid)) {
@@ -3552,7 +3571,7 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
             classic_state.pending_valid = false;
 
             if (status != ERROR_CODE_SUCCESS) {
-                printf("[BTSTACK_HOST] HID connection failed, status=0x%02X\n", status);
+                printf("[BTSTACK_HOST] HID connection failed, cid=0x%04X status=0x%02X\n", hid_cid, status);
                 // Remove connection slot
                 classic_connection_t* conn = find_classic_connection_by_cid(hid_cid);
                 if (conn) {
@@ -3682,23 +3701,12 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
                                conn->vendor_id, conn->profile->name);
                     }
 
-                    // For non-Wiimote devices, query SDP for VID/PID if we don't have it
-                    if (conn->vendor_id == 0 && conn->product_id == 0) {
-                        // Store pending info for SDP callback
-                        memcpy(classic_state.pending_addr, conn->addr, 6);
-                        classic_state.pending_vid = 0;
-                        classic_state.pending_pid = 0;
-
-                        // Query VID/PID via SDP (PnP Information service)
-                        sdp_client_query_uuid16(&sdp_query_vid_pid_callback, conn->addr,
-                                                BLUETOOTH_SERVICE_CLASS_PNP_INFORMATION);
-
-                        // Also request remote name if we don't have it
-                        if (conn->name[0] == '\0') {
-                            gap_remote_name_request(conn->addr, 0, 0);
-                        }
-                    }
                     // Non-Wiimote: wait for HID_SUBEVENT_DESCRIPTOR_AVAILABLE
+                    // NOTE: Do NOT issue SDP queries here — BTstack HID Host starts its
+                    // own SDP query (for HID descriptor) immediately after CONNECTION_OPENED.
+                    // sdp_client only handles one query at a time, so issuing ours here
+                    // would block BTstack's, preventing DESCRIPTOR_AVAILABLE from firing.
+                    // VID/PID SDP query is deferred to DESCRIPTOR_AVAILABLE instead.
                 }
             }
             break;
@@ -3715,10 +3723,30 @@ static void hid_host_packet_handler(uint8_t packet_type, uint16_t channel, uint8
             // is CONNECTION_ESTABLISHED and hid_host_send_report() will succeed.
             int conn_index = get_classic_conn_index(hid_cid);
             if (conn_index >= 0) {
+                // Pass HID descriptor to bthid for generic gamepad parsing
+                const uint8_t* hid_desc = hid_descriptor_storage_get_descriptor_data(hid_cid);
+                uint16_t hid_desc_len = hid_descriptor_storage_get_descriptor_len(hid_cid);
+                if (hid_desc && hid_desc_len > 0) {
+                    printf("[BTSTACK_HOST] Classic HID descriptor: %d bytes\n", hid_desc_len);
+                    bthid_set_hid_descriptor(conn_index, hid_desc, hid_desc_len);
+                }
+
                 btstack_host_stop_scan();
                 scan_timeout_end = 0;
                 printf("[BTSTACK_HOST] Calling bt_on_hid_ready(%d)\n", conn_index);
                 bt_on_hid_ready(conn_index);
+
+                // Query VID/PID via SDP if not yet known (deferred from CONNECTION_OPENED
+                // to avoid conflicting with BTstack's internal HID descriptor SDP query)
+                classic_connection_t* desc_conn = find_classic_connection_by_cid(hid_cid);
+                if (desc_conn && desc_conn->vendor_id == 0 && desc_conn->product_id == 0) {
+                    memcpy(classic_state.pending_addr, desc_conn->addr, 6);
+                    classic_state.pending_vid = 0;
+                    classic_state.pending_pid = 0;
+                    printf("[BTSTACK_HOST] Querying VID/PID via SDP (deferred)\n");
+                    sdp_client_query_uuid16(&sdp_query_vid_pid_callback, desc_conn->addr,
+                                            BLUETOOTH_SERVICE_CLASS_PNP_INFORMATION);
+                }
             }
             break;
         }
