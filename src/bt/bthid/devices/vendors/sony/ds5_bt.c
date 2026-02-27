@@ -417,6 +417,7 @@ static void ds5_process_report(bthid_device_t* device, const uint8_t* data, uint
     if (rpt->r3)       buttons |= JP_BUTTON_R3;
     if (rpt->ps)       buttons |= JP_BUTTON_A1;
     if (rpt->tpad)     buttons |= JP_BUTTON_A2;
+    if (rpt->mute)     buttons |= JP_BUTTON_A3;
 
     // Update event
     ds5->event.buttons = buttons;

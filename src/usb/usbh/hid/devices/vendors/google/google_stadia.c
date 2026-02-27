@@ -136,6 +136,8 @@ static void process_google_stadia(uint8_t dev_addr, uint8_t instance, uint8_t co
 
         // Guide button (Stadia button)
         if (stadia_report.buttons1 & STADIA_BTN1_A1) buttons |= JP_BUTTON_A1;
+        if (stadia_report.buttons1 & STADIA_BTN1_A2) buttons |= JP_BUTTON_A2;  // Capture
+        if (stadia_report.buttons1 & STADIA_BTN1_A3) buttons |= JP_BUTTON_A3;  // Assistant
 
         // Process analog sticks (ensure non-zero)
         uint8_t axis_lx = (stadia_report.left_x == 255) ? 255 : stadia_report.left_x + 1;

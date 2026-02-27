@@ -29,8 +29,8 @@ typedef struct __attribute__((packed)) {
 } stadia_report_t;
 
 // Button masks for buttons1
-#define STADIA_BTN1_A3      0x01  // Assistant/Capture button
-#define STADIA_BTN1_A2      0x02  // Google Assistant button
+#define STADIA_BTN1_A3      0x01  // Assistant button
+#define STADIA_BTN1_A2      0x02  // Capture button
 #define STADIA_BTN1_L2      0x04
 #define STADIA_BTN1_R2      0x08
 #define STADIA_BTN1_A1      0x10  // Stadia button
@@ -170,6 +170,8 @@ static void stadia_process_report(bthid_device_t* device, const uint8_t* data, u
 
     // Guide button (Stadia button)
     if (report.buttons1 & STADIA_BTN1_A1) buttons |= JP_BUTTON_A1;
+    if (report.buttons1 & STADIA_BTN1_A2) buttons |= JP_BUTTON_A2;  // Capture
+    if (report.buttons1 & STADIA_BTN1_A3) buttons |= JP_BUTTON_A3;  // Assistant
 
     // Update event
     sd->event.buttons = buttons;

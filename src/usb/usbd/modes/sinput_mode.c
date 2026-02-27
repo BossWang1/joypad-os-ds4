@@ -116,6 +116,7 @@ static uint32_t convert_buttons(uint32_t buttons)
     if (buttons & JP_BUTTON_S2) sinput_buttons |= SINPUT_MASK_START;   // Start/Options
     if (buttons & JP_BUTTON_A1) sinput_buttons |= SINPUT_MASK_GUIDE;   // Home/Guide
     if (buttons & JP_BUTTON_A2) sinput_buttons |= SINPUT_MASK_CAPTURE; // Capture/Share
+    if (buttons & JP_BUTTON_A3) sinput_buttons |= SINPUT_MASK_MISC4;  // Mute/Assistant
 
     // Extended buttons (paddles) - map L4/R4 if available
     if (buttons & JP_BUTTON_L4) sinput_buttons |= SINPUT_MASK_L_PADDLE1;
@@ -529,8 +530,8 @@ static void sinput_mode_task(void)
     feature_response[13] = 0xFF;
     // Byte 2: START|BACK|GUIDE|CAPTURE = lower 4 bits
     feature_response[14] = 0x0F;
-    // Byte 3: no power/misc buttons
-    feature_response[15] = 0x00;
+    // Byte 3: MISC4 (mute/assistant)
+    feature_response[15] = 0x02;
 
     // Touchpad
     if (cached_has_touch) {

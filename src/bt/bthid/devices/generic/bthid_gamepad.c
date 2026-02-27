@@ -129,8 +129,8 @@ static const uint32_t SEQ_BUTTON_MAP[16] = {
     JP_BUTTON_L3,       // usage 11: left stick
     JP_BUTTON_R3,       // usage 12: right stick
     JP_BUTTON_A1,       // usage 13: guide/home
-    0,                  // usage 14: extra
-    0,                  // usage 15: extra
+    JP_BUTTON_A2,       // usage 14: capture/share
+    JP_BUTTON_A3,       // usage 15: assistant/mute
 };
 
 // ============================================================================

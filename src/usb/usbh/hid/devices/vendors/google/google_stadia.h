@@ -33,8 +33,8 @@ typedef struct TU_ATTR_PACKED
 } stadia_output_report_t;
 
 // Button masks for buttons1
-#define STADIA_BTN1_A3      0x01  // Assistant/Capture button
-#define STADIA_BTN1_A2      0x02  // Google Assistant button
+#define STADIA_BTN1_A3      0x01  // Assistant button
+#define STADIA_BTN1_A2      0x02  // Capture button
 #define STADIA_BTN1_L2      0x04
 #define STADIA_BTN1_R2      0x08
 #define STADIA_BTN1_A1      0x10  // Stadia button
