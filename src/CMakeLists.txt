@@ -264,6 +264,11 @@ set(GC_HOST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/joybus-pio/src/GamecubeController.c
 )
 
+# I2C peer input sharing sources (STEMMA QT)
+set(I2C_PEER_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/i2c_peer/i2c_peer.c
+)
+
 # Controller app common sources
 set(CONTROLLER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/pad/pad_input.c
@@ -779,10 +784,12 @@ target_compile_definitions(joypad_usb_feather_rp2040 PRIVATE
     OLED_I2C_ADDR=0x3C
     OLED_BUTTON_B_PIN=6
     OLED_BUTTON_C_PIN=5
+    I2C_PEER_ENABLED=1
 )
 target_sources(joypad_usb_feather_rp2040 PUBLIC
     ${COMMON_SOURCES}
     ${USB_DEVICE_SOURCES}
+    ${I2C_PEER_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/core/services/display/display.c
     ${CMAKE_CURRENT_SOURCE_DIR}/core/services/display/display_i2c.c
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb/app.c
@@ -791,7 +798,7 @@ target_include_directories(joypad_usb_feather_rp2040 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb
     ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd
 )
-target_link_libraries(joypad_usb_feather_rp2040 PRIVATE ${COMMON_LIBRARIES} tinyusb_device tinyusb_max3421 hardware_i2c)
+target_link_libraries(joypad_usb_feather_rp2040 PRIVATE ${COMMON_LIBRARIES} tinyusb_device tinyusb_max3421 hardware_i2c pico_i2c_slave)
 joypad_target_common(joypad_usb_feather_rp2040)
 joypad_add_btstack(joypad_usb_feather_rp2040)
 pico_enable_stdio_uart(joypad_usb_feather_rp2040 1)
@@ -820,10 +827,12 @@ target_compile_definitions(joypad_usb_feather_rp2040_usb_host_max3421 PRIVATE
     OLED_I2C_ADDR=0x3C
     OLED_BUTTON_B_PIN=6
     OLED_BUTTON_C_PIN=5
+    I2C_PEER_ENABLED=1
 )
 target_sources(joypad_usb_feather_rp2040_usb_host_max3421 PUBLIC
     ${COMMON_SOURCES}
     ${USB_DEVICE_SOURCES}
+    ${I2C_PEER_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/core/services/display/display.c
     ${CMAKE_CURRENT_SOURCE_DIR}/core/services/display/display_i2c.c
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb/app.c
@@ -832,7 +841,7 @@ target_include_directories(joypad_usb_feather_rp2040_usb_host_max3421 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb
     ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd
 )
-target_link_libraries(joypad_usb_feather_rp2040_usb_host_max3421 PRIVATE ${COMMON_LIBRARIES} tinyusb_device tinyusb_max3421 hardware_i2c)
+target_link_libraries(joypad_usb_feather_rp2040_usb_host_max3421 PRIVATE ${COMMON_LIBRARIES} tinyusb_device tinyusb_max3421 hardware_i2c pico_i2c_slave)
 joypad_target_common(joypad_usb_feather_rp2040_usb_host_max3421)
 joypad_add_btstack(joypad_usb_feather_rp2040_usb_host_max3421)
 pico_enable_stdio_uart(joypad_usb_feather_rp2040_usb_host_max3421 1)
@@ -1298,12 +1307,14 @@ add_executable(joypad_controller_macropad)
 target_compile_definitions(joypad_controller_macropad PRIVATE
     CONFIG_CONTROLLER=1 CONTROLLER_TYPE_MACROPAD=1 DISABLE_USB_HOST=1 BUTTON_USER_GPIO=${BOARD_BUTTON_GPIO}
     ADAFRUIT_MACROPAD_RP2040=1 WS2812_NUM_PIXELS=12
+    I2C_PEER_ENABLED=1
 )
 target_sources(joypad_controller_macropad PUBLIC ${CORE_SOURCES} ${USB_DEVICE_SOURCES} ${CONTROLLER_SOURCES}
+    ${I2C_PEER_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/controller/app.c
 )
 target_include_directories(joypad_controller_macropad PUBLIC ${CONTROLLER_INCLUDES})
-target_link_libraries(joypad_controller_macropad PRIVATE ${CONTROLLER_LIBRARIES})
+target_link_libraries(joypad_controller_macropad PRIVATE ${CONTROLLER_LIBRARIES} pico_i2c_slave)
 joypad_target_common(joypad_controller_macropad)
 
 # ============================================================================

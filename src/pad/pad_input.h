@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "core/input_event.h"
 #include "core/input_interface.h"
 
 // ============================================================================
@@ -130,8 +131,9 @@ typedef struct {
     int8_t display_rst;         // Reset pin
 
     // QWIIC UART for linking controllers (PAD_PIN_DISABLED = not used)
-    int8_t qwiic_tx;            // UART TX pin (QWIIC SDA)
-    int8_t qwiic_rx;            // UART RX pin (QWIIC SCL)
+    int8_t qwiic_tx;            // UART TX pin (QWIIC SDA) / I2C SDA
+    int8_t qwiic_rx;            // UART RX pin (QWIIC SCL) / I2C SCL
+    int8_t qwiic_i2c_inst;      // I2C instance for peer mode (-1 = UART, 0 = I2C0, 1 = I2C1)
 } pad_device_config_t;
 
 // ============================================================================
@@ -148,6 +150,9 @@ void pad_input_clear_devices(void);
 
 // Get number of registered pad devices
 uint8_t pad_input_get_device_count(void);
+
+// Get current input event for a pad device (NULL if invalid index)
+const input_event_t* pad_input_get_event(uint8_t device_index);
 
 // Pad input interface (implements InputInterface pattern)
 extern const InputInterface pad_input_interface;
@@ -194,6 +199,7 @@ extern const InputInterface pad_input_interface;
     .deadzone = 10, \
     .led_pin = PAD_PIN_DISABLED, \
     .led_count = 0, \
+    .qwiic_i2c_inst = PAD_PIN_DISABLED, \
 }
 
 #endif // PAD_INPUT_H

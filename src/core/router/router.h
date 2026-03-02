@@ -44,6 +44,7 @@ typedef enum {
     INPUT_SOURCE_NATIVE_ARCADE,
     INPUT_SOURCE_GPIO,
     INPUT_SOURCE_SENSORS,
+    INPUT_SOURCE_I2C_PEER,
 } input_source_t;
 
 typedef enum {

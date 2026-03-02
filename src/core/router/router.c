@@ -29,6 +29,11 @@ extern const char* hid_get_product_name(uint8_t dev_addr);
 #include "bt/bthid/bthid.h"
 #endif
 
+// Device name lookup for I2C peer
+#ifdef I2C_PEER_ENABLED
+#include "i2c_peer/i2c_peer.h"
+#endif
+
 // ============================================================================
 // AUTO-ASSIGN CONFIGURATION
 // ============================================================================
@@ -120,6 +125,10 @@ static const char* get_device_name(const input_event_t* event) {
 #endif
         case INPUT_TRANSPORT_NATIVE:
             return "Native";
+#ifdef I2C_PEER_ENABLED
+        case INPUT_TRANSPORT_I2C:
+            return i2c_peer_get_device_name();
+#endif
         default:
             return "Unknown";
     }

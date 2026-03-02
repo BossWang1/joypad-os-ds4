@@ -28,6 +28,14 @@
 // UART linking state
 static bool uart_link_enabled = false;
 
+// I2C peer state
+#ifdef I2C_PEER_ENABLED
+#include "i2c_peer/i2c_peer.h"
+static bool i2c_peer_enabled = false;
+static i2c_peer_status_t peer_status = {0};
+static bool peer_status_valid = false;
+#endif
+
 // Track last displayed mode to avoid unnecessary redraws
 static usb_output_mode_t last_displayed_mode = 0xFF;
 static uint8_t last_rumble = 0;
@@ -258,13 +266,28 @@ void app_init(void)
         printf("[app:controller] Display initialized\n");
     }
 
-    // Initialize UART link if QWIIC pins are configured
+    // Initialize QWIIC link: I2C peer mode or UART link
+#ifdef I2C_PEER_ENABLED
+    if (PAD_CONFIG.qwiic_i2c_inst >= 0 &&
+        PAD_CONFIG.qwiic_tx != PAD_PIN_DISABLED && PAD_CONFIG.qwiic_rx != PAD_PIN_DISABLED) {
+        // I2C peer slave mode — serve local inputs to master over I2C
+        i2c_peer_config_t peer_cfg = {
+            .i2c_inst = (uint8_t)PAD_CONFIG.qwiic_i2c_inst,
+            .sda_pin = (uint8_t)PAD_CONFIG.qwiic_tx,
+            .scl_pin = (uint8_t)PAD_CONFIG.qwiic_rx,
+            .addr = I2C_PEER_DEFAULT_ADDR,
+            .skip_i2c_init = false,
+        };
+        i2c_peer_slave_set_name(CONTROLLER_NAME);
+        i2c_peer_slave_init(&peer_cfg);
+        i2c_peer_enabled = true;
+    } else
+#endif
     if (PAD_CONFIG.qwiic_tx != PAD_PIN_DISABLED && PAD_CONFIG.qwiic_rx != PAD_PIN_DISABLED) {
-        // Initialize UART host (receives inputs from linked controller)
+        // UART link mode — bidirectional UART between two controllers
         uart_host_init_pins(PAD_CONFIG.qwiic_tx, PAD_CONFIG.qwiic_rx, UART_PROTOCOL_BAUD_DEFAULT);
         uart_host_set_mode(UART_HOST_MODE_NORMAL);
 
-        // Initialize UART device (sends inputs to linked controller)
         uart_device_init_pins(PAD_CONFIG.qwiic_tx, PAD_CONFIG.qwiic_rx, UART_PROTOCOL_BAUD_DEFAULT);
         uart_device_set_mode(UART_DEVICE_MODE_ON_CHANGE);
 
@@ -296,13 +319,18 @@ void app_init(void)
     // Add route: Pad → USB Device
     router_add_route(INPUT_SOURCE_GPIO, OUTPUT_TARGET_USB_DEVICE, 0);
 
-    // Set up router tap for UART linking (if enabled)
+    // Set up router tap for UART linking (I2C peer uses direct path in app_task)
     if (uart_link_enabled) {
         router_set_tap(OUTPUT_TARGET_USB_DEVICE, uart_link_tap);
     }
 
     printf("[app:controller] Initialization complete\n");
     printf("[app:controller]   Routing: Pad → USB Device (HID Gamepad)\n");
+#ifdef I2C_PEER_ENABLED
+    if (i2c_peer_enabled) {
+        printf("[app:controller]   I2C Peer: Slave mode (connect via STEMMA QT)\n");
+    } else
+#endif
     if (uart_link_enabled) {
         printf("[app:controller]   UART Link: Enabled (connect via QWIIC to merge inputs)\n");
     }
@@ -321,6 +349,22 @@ static void update_display(uint8_t rumble, uint32_t buttons)
     usb_output_mode_t mode = usbd_get_mode();
     bool needs_update = false;
 
+#ifdef I2C_PEER_ENABLED
+    // When peer status is available, show master's mode instead of local
+    static usb_output_mode_t last_peer_mode = 0xFF;
+    static bool last_peer_connected = false;
+    if (peer_status_valid) {
+        usb_output_mode_t peer_mode = (usb_output_mode_t)peer_status.usb_mode;
+        bool peer_connected = (peer_status.flags & I2C_PEER_FLAG_CONNECTED) != 0;
+
+        if (peer_mode != last_peer_mode || peer_connected != last_peer_connected) {
+            last_peer_mode = peer_mode;
+            last_peer_connected = peer_connected;
+            last_displayed_mode = 0xFF;  // Force redraw
+        }
+    }
+#endif
+
     // Check if mode changed
     if (mode != last_displayed_mode) {
         last_displayed_mode = mode;
@@ -330,13 +374,30 @@ static void update_display(uint8_t rumble, uint32_t buttons)
 
         // Draw mode name in large text at top
         const char* mode_name = usbd_get_mode_name(mode);
+#ifdef I2C_PEER_ENABLED
+        if (peer_status_valid && peer_status.usb_mode < USB_OUTPUT_MODE_COUNT) {
+            mode_name = usbd_get_mode_name((usb_output_mode_t)peer_status.usb_mode);
+        }
+#endif
         display_text_large(4, 4, mode_name);
 
         // Draw separator line
         display_hline(0, 24, 128);
 
+#ifdef I2C_PEER_ENABLED
+        // Show connected device name from master
+        if (peer_status_valid && (peer_status.flags & I2C_PEER_FLAG_CONNECTED) &&
+            (peer_status.flags & I2C_PEER_FLAG_NAME_VALID)) {
+            display_text(4, 28, peer_status.name);
+        } else if (peer_status_valid && !(peer_status.flags & I2C_PEER_FLAG_CONNECTED)) {
+            display_text(4, 28, "No controller");
+        } else {
+#endif
         // Draw labels
         display_text(4, 28, "Rumble:");
+#ifdef I2C_PEER_ENABLED
+        }
+#endif
     }
 
     // Update rumble bar if changed significantly
@@ -384,7 +445,10 @@ void app_task(void)
     // Process button input for mode switching
     button_task();
 
-    // Update LED colors when USB output mode changes
+    // Update LED colors when USB output mode changes (skip when peer controls LEDs)
+#ifdef I2C_PEER_ENABLED
+    if (!peer_status_valid)
+#endif
     {
         static usb_output_mode_t last_led_mode = USB_OUTPUT_MODE_COUNT;
         usb_output_mode_t mode = usbd_get_mode();
@@ -425,21 +489,70 @@ void app_task(void)
     // Process codes detection (Konami code, etc.)
     codes_process_raw(buttons);
 
+    // I2C peer: serve local inputs to master + consume master status
+#ifdef I2C_PEER_ENABLED
+    if (i2c_peer_enabled) {
+        // Feed pad events to I2C peer slave (bypasses router tap
+        // which requires player assignment — pad always has data to serve)
+        const input_event_t* pad_ev = pad_input_get_event(0);
+        if (pad_ev) {
+            i2c_peer_slave_tap(OUTPUT_TARGET_USB_DEVICE, 0, pad_ev);
+        }
+
+        // Consume device status from master
+        i2c_peer_status_t new_status;
+        if (i2c_peer_slave_get_status(&new_status)) {
+            peer_status = new_status;
+            peer_status_valid = true;
+
+            // Update LEDs with master's mode color
+            if (PAD_CONFIG.led_count > 1) {
+                uint8_t colors[16][3];
+                for (int i = 0; i < PAD_CONFIG.led_count && i < 16; i++) {
+                    colors[i][0] = new_status.mode_color[0];
+                    colors[i][1] = new_status.mode_color[1];
+                    colors[i][2] = new_status.mode_color[2];
+                }
+                neopixel_set_custom_colors(colors, PAD_CONFIG.led_count);
+                neopixel_set_pulse_mask(PAD_CONFIG.led_pulse_mask);
+            } else {
+                leds_set_color(new_status.mode_color[0],
+                               new_status.mode_color[1],
+                               new_status.mode_color[2]);
+            }
+
+            // Mirror rumble via speaker
+            if (speaker_is_initialized()) {
+                uint8_t r = new_status.rumble_left > new_status.rumble_right
+                          ? new_status.rumble_left : new_status.rumble_right;
+                speaker_set_rumble(r);
+            }
+        }
+    }
+#endif
+
     // Process UART link communication (if enabled)
     if (uart_link_enabled) {
         uart_host_task();   // Receive inputs from linked controller
         uart_device_task(); // Send inputs to linked controller
     }
 
-    // Get rumble value
+    // Get rumble value (skip when peer controls speaker)
     uint8_t rumble = 0;
-    if (usbd_output_interface.get_rumble) {
-        rumble = usbd_output_interface.get_rumble();
-    }
-
-    // Handle rumble feedback via speaker (if initialized)
-    if (speaker_is_initialized()) {
-        speaker_set_rumble(rumble);
+#ifdef I2C_PEER_ENABLED
+    if (peer_status_valid) {
+        rumble = peer_status.rumble_left > peer_status.rumble_right
+               ? peer_status.rumble_left : peer_status.rumble_right;
+    } else
+#endif
+    {
+        if (usbd_output_interface.get_rumble) {
+            rumble = usbd_output_interface.get_rumble();
+        }
+        // Handle rumble feedback via speaker (if initialized)
+        if (speaker_is_initialized()) {
+            speaker_set_rumble(rumble);
+        }
     }
 
     // Update LED press mask from button state

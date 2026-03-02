@@ -25,10 +25,15 @@
 #include "bt/btstack/btstack_host.h"
 #include "bt/transport/bt_transport.h"
 #include "core/services/leds/leds.h"
+
+#ifdef I2C_PEER_ENABLED
+#include "i2c_peer/i2c_peer.h"
+#endif
 #include "core/buttons.h"
 #include "tusb.h"
 #include "pico/stdlib.h"
 #include <stdio.h>
+#include <string.h>
 
 #ifdef OLED_I2C_INST
 #include "core/services/display/display.h"
@@ -126,6 +131,9 @@ static void on_button_event(button_event_t event)
 
 static const InputInterface* input_interfaces[] = {
     &usbh_input_interface,
+#ifdef I2C_PEER_ENABLED
+    &i2c_peer_input_interface,
+#endif
 };
 
 const InputInterface** app_get_input_interfaces(uint8_t* count)
@@ -160,6 +168,7 @@ static const char* transport_str(input_transport_t t) {
         case INPUT_TRANSPORT_BT_CLASSIC: return "BT";
         case INPUT_TRANSPORT_BT_BLE:     return "BLE";
         case INPUT_TRANSPORT_NATIVE:     return "Native";
+        case INPUT_TRANSPORT_I2C:        return "I2C";
         default:                         return "?";
     }
 }
@@ -328,6 +337,21 @@ void app_init(void)
     // Add default route: USB Host → USB Device
     router_add_route(INPUT_SOURCE_USB_HOST, OUTPUT_TARGET_USB_DEVICE, 0);
 
+#ifdef I2C_PEER_ENABLED
+    // Add I2C peer route and initialize master
+    router_add_route(INPUT_SOURCE_I2C_PEER, OUTPUT_TARGET_USB_DEVICE, 0);
+    {
+        i2c_peer_config_t peer_cfg = {
+            .i2c_inst = OLED_I2C_INST,
+            .sda_pin = OLED_I2C_SDA_PIN,
+            .scl_pin = OLED_I2C_SCL_PIN,
+            .addr = I2C_PEER_DEFAULT_ADDR,
+            .skip_i2c_init = true,  // OLED already initialized I2C bus
+        };
+        i2c_peer_master_init(&peer_cfg);
+    }
+#endif
+
     // Configure player management
     player_config_t player_cfg = {
         .slot_mode = PLAYER_SLOT_MODE,
@@ -404,5 +428,56 @@ void app_task(void)
 #ifdef OLED_I2C_INST
     oled_handle_buttons();
     oled_update_display();
+#endif
+
+#ifdef I2C_PEER_ENABLED
+    // Send device status to I2C peer slave (~10Hz or on change)
+    {
+        static uint32_t last_status_send = 0;
+        static i2c_peer_status_t last_status = {0};
+        uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+
+        i2c_peer_status_t status = {0};
+
+        // Build status from current state
+        if (playersCount > 0 && players[0].dev_addr >= 0) {
+            status.flags = I2C_PEER_FLAG_CONNECTED;
+            status.transport = (uint8_t)players[0].transport;
+            status.player_number = (uint8_t)players[0].player_number;
+            const char* name = get_player_name(0);
+            if (name && name[0]) {
+                status.flags |= I2C_PEER_FLAG_NAME_VALID;
+                strncpy(status.name, name, sizeof(status.name) - 1);
+                status.name[sizeof(status.name) - 1] = '\0';
+            }
+        }
+
+        // USB output mode + color
+        usb_output_mode_t cur_mode = usbd_get_mode();
+        status.usb_mode = (uint8_t)cur_mode;
+        usbd_get_mode_color(cur_mode, &status.mode_color[0],
+                            &status.mode_color[1], &status.mode_color[2]);
+
+        // Feedback (rumble, LEDs)
+        if (usbd_output_interface.get_feedback) {
+            output_feedback_t fb;
+            if (usbd_output_interface.get_feedback(&fb)) {
+                status.rumble_left = fb.rumble_left;
+                status.rumble_right = fb.rumble_right;
+                status.led_player = fb.led_player;
+                status.led_color[0] = fb.led_r;
+                status.led_color[1] = fb.led_g;
+                status.led_color[2] = fb.led_b;
+            }
+        }
+
+        // Send on change or every 100ms (~10Hz)
+        if (memcmp(&status, &last_status, sizeof(status)) != 0 ||
+            now_ms - last_status_send >= 100) {
+            i2c_peer_master_send_status(&status);
+            last_status = status;
+            last_status_send = now_ms;
+        }
+    }
 #endif
 }
