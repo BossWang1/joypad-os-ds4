@@ -1,0 +1,12 @@
+# nRF Connect SDK workspace (managed by west, not committed)
+.west/
+bootloader/
+modules/
+nrf/
+nrfxlib/
+test/
+tools/
+zephyr/
+
+# Build output
+build/

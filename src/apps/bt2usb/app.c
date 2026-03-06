@@ -30,6 +30,16 @@ extern const bt_transport_t bt_transport_esp32;
 #ifndef STATUS_LED_ACTIVE_LOW
 #define STATUS_LED_ACTIVE_LOW 1
 #endif
+#elif defined(BTSTACK_USE_NRF)
+#include <zephyr/drivers/gpio.h>
+extern const bt_transport_t bt_transport_nrf;
+// Status LED GPIO (Seeed XIAO nRF52840 = P0.26, active low)
+#ifndef STATUS_LED_GPIO
+#define STATUS_LED_GPIO 26
+#endif
+#ifndef STATUS_LED_ACTIVE_LOW
+#define STATUS_LED_ACTIVE_LOW 1
+#endif
 #else
 #include "pico/cyw43_arch.h"
 extern const bt_transport_t bt_transport_cyw43;
@@ -49,6 +59,11 @@ static void platform_led_set(bool on)
 {
 #ifdef BTSTACK_USE_ESP32
     gpio_set_level(STATUS_LED_GPIO, (on ^ STATUS_LED_ACTIVE_LOW) ? 1 : 0);
+#elif defined(BTSTACK_USE_NRF)
+    const struct device *gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+    if (device_is_ready(gpio_dev)) {
+        gpio_pin_set(gpio_dev, STATUS_LED_GPIO, (on ^ STATUS_LED_ACTIVE_LOW) ? 1 : 0);
+    }
 #else
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, on ? 1 : 0);
 #endif
@@ -163,6 +178,13 @@ void app_init(void)
     };
     gpio_config(&led_cfg);
     gpio_set_level(STATUS_LED_GPIO, STATUS_LED_ACTIVE_LOW ? 1 : 0);  // Start OFF
+#elif defined(BTSTACK_USE_NRF)
+    printf("[app:bt2usb] nRF52840 BLE -> USB HID\n");
+    // Init status LED GPIO via Zephyr
+    const struct device *led_gpio = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+    if (device_is_ready(led_gpio)) {
+        gpio_pin_configure(led_gpio, STATUS_LED_GPIO, GPIO_OUTPUT_INACTIVE);
+    }
 #else
     printf("[app:bt2usb] Pico W built-in Bluetooth -> USB HID\n");
 #endif
@@ -199,6 +221,8 @@ void app_init(void)
     printf("[app:bt2usb] Initializing Bluetooth...\n");
 #ifdef BTSTACK_USE_ESP32
     bt_init(&bt_transport_esp32);
+#elif defined(BTSTACK_USE_NRF)
+    bt_init(&bt_transport_nrf);
 #else
     bt_init(&bt_transport_cyw43);
 #endif

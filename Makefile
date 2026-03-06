@@ -225,6 +225,8 @@ help:
 	@echo "  make bt2usb_esp32s3     - Bluetooth -> USB HID (ESP32-S3, requires ESP-IDF)"
 	@echo "  make uf2-bt2usb_esp32s3       - Build + generate .uf2 for drag-and-drop update"
 	@echo "  make flash-uf2-bt2usb_esp32s3 - Build + flash .uf2 via TinyUF2 drive"
+	@echo "  make bt2usb_xiao_ble    - Bluetooth -> USB HID (Seeed XIAO nRF52840, requires NCS)"
+	@echo "  make flash-bt2usb_xiao_ble   - Flash Seeed XIAO nRF52840 via UF2 bootloader"
 	@echo "  make bt2nuon_pico_w     - Bluetooth -> Nuon (Pico W)"
 	@echo "  make bt2n64_pico_w      - Bluetooth -> N64 (Pico W)"
 	@echo "  make wifi2usb_pico_w    - WiFi -> USB HID (Pico W)"
@@ -293,6 +295,15 @@ init-esp:
 	@bash -c 'source $(HOME)/esp-idf/export.sh && echo "$(GREEN)  Python env: $$IDF_PYTHON_ENV_PATH$(NC)"'
 	@echo "$(GREEN)✓ ESP-IDF setup complete!$(NC)"
 	@echo "$(GREEN)  You can now run 'make bt2usb_esp32s3'$(NC)"
+	@echo ""
+
+# Initialize nRF Connect SDK for nRF52840 builds
+.PHONY: init-nrf
+init-nrf:
+	@echo "$(YELLOW)Setting up nRF Connect SDK for nRF52840...$(NC)"
+	@cd nrf && $(MAKE) init
+	@echo "$(GREEN)✓ nRF Connect SDK setup complete!$(NC)"
+	@echo "$(GREEN)  You can now run 'make bt2usb_xiao_ble'$(NC)"
 	@echo ""
 
 # Alias for all
@@ -506,6 +517,27 @@ flash-uf2-bt2usb_esp32s3: uf2-bt2usb_esp32s3
 	@cp $(RELEASE_DIR)/joypad_$(VERSION_ID)_bt2usb_esp32s3.uf2 /Volumes/XIAOS3BOOT/
 	@echo "$(GREEN)✓ Firmware flashed, device will reboot$(NC)"
 	@echo ""
+
+# --- Seeed XIAO nRF52840 bt2usb (requires nRF Connect SDK) ---
+.PHONY: bt2usb_xiao_ble
+bt2usb_xiao_ble:
+	@echo "$(YELLOW)Building bt2usb for Seeed XIAO nRF52840...$(NC)"
+	@cd nrf && $(MAKE) build BOARD=xiao_ble
+	@mkdir -p $(RELEASE_DIR)
+	@cp nrf/build/nrf/zephyr/zephyr.uf2 \
+	    $(RELEASE_DIR)/joypad_$(VERSION_ID)_bt2usb_xiao_ble.uf2
+	@echo "$(GREEN)✓ bt2usb_xiao_ble built successfully$(NC)"
+	@echo "  File: $(RELEASE_DIR)/joypad_$(VERSION_ID)_bt2usb_xiao_ble.uf2"
+	@echo ""
+
+.PHONY: flash-bt2usb_xiao_ble
+flash-bt2usb_xiao_ble: bt2usb_xiao_ble
+	@cd nrf && $(MAKE) flash-uf2
+	@echo ""
+
+.PHONY: monitor-bt2usb_xiao_ble
+monitor-bt2usb_xiao_ble:
+	@cd nrf && $(MAKE) monitor
 
 .PHONY: wifi2usb_pico_w
 wifi2usb_pico_w:

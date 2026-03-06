@@ -31,8 +31,18 @@
 #include "excrypt.h"
 #include "usbdsec.h"
 
-// Embedded target: use pico SDK hardware RNG
+// Hardware RNG
+#if defined(PLATFORM_NRF)
+#include <zephyr/random/random.h>
+static inline uint32_t get_rand_32(void) {
+    uint32_t val;
+    sys_rand_get(&val, sizeof(val));
+    return val;
+}
+#else
+// Pico SDK hardware RNG (ESP32 has a shim at esp/main/pico/rand.h)
 #include "pico/rand.h"
+#endif
 
 // Disable printf debugging on embedded
 #define XSM3_printf(...)

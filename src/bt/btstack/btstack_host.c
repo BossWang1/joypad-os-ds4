@@ -16,7 +16,7 @@
 
 // Run loop depends on transport: embedded for USB dongle, async_context for CYW43,
 // FreeRTOS for ESP32
-#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32)
+#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
 #include "btstack_run_loop_embedded.h"
 #endif
 
@@ -44,7 +44,7 @@ extern void btstack_memory_init(void);
 
 // Link key storage: TLV (flash) based for all builds
 // USB dongle uses pico_flash_bank_instance(), CYW43/ESP32 use their own TLV setup
-#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32)
+#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
 #include "classic/btstack_link_key_db_tlv.h"
 #include "ble/le_device_db_tlv.h"
 #include "btstack_tlv_flash_bank.h"
@@ -53,6 +53,7 @@ extern void btstack_memory_init(void);
 #include "hardware/flash.h"
 #endif
 
+#include "btstack_tlv.h"
 #include "hci_dump.h"
 #include "hci_dump_embedded_stdout.h"
 
@@ -79,7 +80,7 @@ extern int find_player_index(int dev_addr, int instance);
 // ============================================================================
 // FLASH HELPERS (for TLV storage)
 // ============================================================================
-#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32)
+#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
 // Erase both BTstack flash banks (8KB total at end of flash)
 static void __no_inline_not_in_flash_func(flash_erase_banks_func)(void* p) {
     (void)p;
@@ -378,7 +379,7 @@ static ble_connection_t* find_ble_connection_by_conn_index(uint8_t conn_index) {
     if (conn_index < BLE_CONN_INDEX_OFFSET) return NULL;
     uint8_t ble_index = conn_index - BLE_CONN_INDEX_OFFSET;
     if (ble_index >= MAX_BLE_CONNECTIONS) return NULL;
-    if (hid_state.connections[ble_index].handle == 0) return NULL;
+    if (hid_state.connections[ble_index].handle == HCI_CON_HANDLE_INVALID) return NULL;
     return &hid_state.connections[ble_index];
 }
 
@@ -486,7 +487,7 @@ static void setup_hid_handlers(void)
 
 // btstack_host_init is only used for USB dongle transport
 // For CYW43/ESP32, use btstack_host_init_hid_handlers() after external BTstack init
-#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32)
+#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
 
 // TLV context for flash-based link key storage (must be static/persistent)
 static btstack_tlv_flash_bank_t btstack_tlv_flash_bank_context;
@@ -570,6 +571,10 @@ void btstack_host_init(const void* transport)
     printf("[BTSTACK_HOST] Initializing BTstack...\n");
 
     memset(&hid_state, 0, sizeof(hid_state));
+    // Initialize BLE connection handles to invalid (handle 0 is valid in BLE)
+    for (int i = 0; i < MAX_BLE_CONNECTIONS; i++) {
+        hid_state.connections[i].handle = HCI_CON_HANDLE_INVALID;
+    }
     hid_state.hci_transport = (const hci_transport_t*)transport;
 
     // HCI dump disabled - too verbose (logs every ACL packet)
@@ -604,6 +609,10 @@ void btstack_host_init_hid_handlers(void)
     printf("[BTSTACK_HOST] Initializing HID handlers (BTstack already initialized externally)...\n");
 
     memset(&hid_state, 0, sizeof(hid_state));
+    // Initialize BLE connection handles to invalid (handle 0 is valid in BLE)
+    for (int i = 0; i < MAX_BLE_CONNECTIONS; i++) {
+        hid_state.connections[i].handle = HCI_CON_HANDLE_INVALID;
+    }
     // Note: hci_transport is not set here since BTstack was initialized externally
 
     // Set up HID handlers (BTstack core already initialized by btstack_cyw43_init or similar)
@@ -627,6 +636,69 @@ void btstack_host_power_on(void)
 }
 
 // ============================================================================
+// LAST CONNECTED DEVICE PERSISTENCE (via BTstack TLV)
+// ============================================================================
+
+// TLV tag 'JPLC' = Joypad Last Connected
+#define TLV_TAG_LAST_CONNECTED (((uint32_t)'J' << 24) | ((uint32_t)'P' << 16) | ((uint32_t)'L' << 8) | 'C')
+
+typedef struct {
+    bd_addr_t addr;
+    uint8_t addr_type;
+    char name[48];
+} __attribute__((packed)) last_connected_record_t;
+
+static void btstack_host_save_last_connected(void)
+{
+    const btstack_tlv_t *tlv_impl = NULL;
+    void *tlv_context = NULL;
+    btstack_tlv_get_instance(&tlv_impl, &tlv_context);
+    if (!tlv_impl) return;
+
+    last_connected_record_t record;
+    memcpy(record.addr, hid_state.last_connected_addr, 6);
+    record.addr_type = (uint8_t)hid_state.last_connected_addr_type;
+    strncpy(record.name, hid_state.last_connected_name, sizeof(record.name) - 1);
+    record.name[sizeof(record.name) - 1] = '\0';
+
+    tlv_impl->store_tag(tlv_context, TLV_TAG_LAST_CONNECTED,
+                        (const uint8_t *)&record, sizeof(record));
+}
+
+static void btstack_host_restore_last_connected(void)
+{
+    if (hid_state.has_last_connected) return;  // Already have one (e.g., from same session)
+
+    const btstack_tlv_t *tlv_impl = NULL;
+    void *tlv_context = NULL;
+    btstack_tlv_get_instance(&tlv_impl, &tlv_context);
+    if (!tlv_impl) return;
+
+    last_connected_record_t record;
+    int len = tlv_impl->get_tag(tlv_context, TLV_TAG_LAST_CONNECTED,
+                                (uint8_t *)&record, sizeof(record));
+    if (len != sizeof(record)) return;
+
+    // Validate — addr must not be all zeros
+    bool valid = false;
+    for (int i = 0; i < 6; i++) {
+        if (record.addr[i] != 0) { valid = true; break; }
+    }
+    if (!valid) return;
+
+    memcpy(hid_state.last_connected_addr, record.addr, 6);
+    hid_state.last_connected_addr_type = (bd_addr_type_t)record.addr_type;
+    strncpy(hid_state.last_connected_name, record.name, sizeof(hid_state.last_connected_name) - 1);
+    hid_state.last_connected_name[sizeof(hid_state.last_connected_name) - 1] = '\0';
+    hid_state.has_last_connected = true;
+    hid_state.reconnect_attempts = 0;
+
+    printf("[BTSTACK_HOST] Restored last connected: %02X:%02X:%02X:%02X:%02X:%02X name='%s'\n",
+           record.addr[5], record.addr[4], record.addr[3], record.addr[2], record.addr[1], record.addr[0],
+           hid_state.last_connected_name);
+}
+
+// ============================================================================
 // SCANNING
 // ============================================================================
 
@@ -644,6 +716,8 @@ static struct {
     uint32_t timestamp;  // For expiry
 } pending_ble_gamepad;
 
+#define BLE_RECONNECT_INTERVAL_MS 20000  // While scanning, try reconnecting to bonded device every 20s
+
 void btstack_host_start_scan(void)
 {
     if (!hid_state.powered_on) {
@@ -660,9 +734,15 @@ void btstack_host_start_scan(void)
     gap_start_scan();
     hid_state.scan_active = true;
     hid_state.state = BLE_STATE_SCANNING;
-    hid_state.scan_start_time = btstack_run_loop_get_time_ms();
+    if (hid_state.has_last_connected && hid_state.scan_start_time == 0) {
+        // First scan with a bonded device: offset start time so periodic reconnect
+        // fires after ~3s instead of the full BLE_RECONNECT_INTERVAL_MS (20s)
+        hid_state.scan_start_time = btstack_run_loop_get_time_ms() - BLE_RECONNECT_INTERVAL_MS + 3000;
+    } else {
+        hid_state.scan_start_time = btstack_run_loop_get_time_ms();
+    }
 
-#ifndef BTSTACK_USE_ESP32
+#if !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
     // Also start classic BT inquiry (not available on ESP32-S3 BLE-only)
     // Alternate between GIAC (general) and LIAC (limited) to discover Wiimotes/Wii U Pro
     // which use Limited Discoverable mode when SYNC button is pressed
@@ -687,7 +767,7 @@ void btstack_host_stop_scan(void)
         hid_state.scan_active = false;
     }
 
-#ifndef BTSTACK_USE_ESP32
+#if !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
     if (classic_state.inquiry_active) {
         printf("[BTSTACK_HOST] Stopping Classic inquiry\n");
         gap_inquiry_stop();
@@ -708,7 +788,6 @@ void btstack_host_start_timed_scan(uint32_t timeout_ms)
 // ============================================================================
 
 #define BLE_CONNECT_TIMEOUT_MS 10000   // 10s timeout for BLE connection attempts
-#define BLE_RECONNECT_INTERVAL_MS 20000  // While scanning, try reconnecting to bonded device every 20s
 
 void btstack_host_connect_ble(bd_addr_t addr, bd_addr_type_t addr_type)
 {
@@ -760,7 +839,7 @@ void btstack_host_process(void)
     // Process transport-specific tasks (e.g., USB polling, CYW43 async context)
     btstack_host_transport_process();
 
-#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32)
+#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
     // Process BTstack run loop multiple times to let packets flow through HCI->L2CAP->ATT->GATT
     // Note: CYW43 uses async_context, ESP32 uses FreeRTOS run loop - both process automatically
     for (int i = 0; i < 5; i++) {
@@ -858,7 +937,8 @@ void btstack_host_process(void)
     // Skip if:
     //   - waiting for incoming Classic reconnection (outgoing HID failed)
     //   - Classic connection setup in progress (name request, HID connect pending)
-    if (hid_state.state == BLE_STATE_IDLE &&
+    if (hid_state.powered_on &&
+        hid_state.state == BLE_STATE_IDLE &&
         hid_state.reconnect_attempt_time == 0 &&
         !hid_state.scan_active &&
         classic_state.waiting_for_incoming_time == 0 &&
@@ -1012,7 +1092,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 hid_state.scan_active = false;
                 classic_state.inquiry_active = false;
 
-#ifndef BTSTACK_USE_ESP32
+#if !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
                 // Set master role policy for incoming Classic connections
                 // Wiimotes (including Wii U Pro) REQUIRE us to be master
                 hci_set_master_slave_policy(0);  // 0 = always try to become master
@@ -1048,7 +1128,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 // Set IO capability for "just works" pairing (no PIN required)
                 gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
 
-#ifndef BTSTACK_USE_ESP32
+#if !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
                 // Classic BT setup (not available on ESP32-S3 BLE-only)
                 // Set class of device to Computer (Desktop Workstation)
                 gap_set_class_of_device(0x000104);  // Major: Computer, Minor: Desktop
@@ -1068,7 +1148,10 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 gap_connectable_control(1);
 #endif
 
-                // Auto-start scanning
+                // Restore last connected device from NVS (for reconnection after reboot)
+                btstack_host_restore_last_connected();
+
+                // Always start scanning (discovers new devices + triggers periodic reconnect)
                 btstack_host_start_scan();
             }
             break;
@@ -2021,6 +2104,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 printf("[BTSTACK_HOST] BLE disconnect: notifying bthid (conn_index=%d)\n", conn->conn_index);
                 bt_on_disconnect(conn->conn_index);
                 memset(conn, 0, sizeof(*conn));
+                conn->handle = HCI_CON_HANDLE_INVALID;
 
                 // Clean up GATT/HIDS client state for this connection
                 if (hid_state.hids_cid != 0) {
@@ -2288,6 +2372,7 @@ static void sm_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
                     hid_state.last_connected_name[sizeof(hid_state.last_connected_name) - 1] = '\0';
                     hid_state.has_last_connected = true;
                     hid_state.reconnect_attempts = 0;
+                    btstack_host_save_last_connected();
                     printf("[BTSTACK_HOST] Stored device for reconnection: %02X:%02X:%02X:%02X:%02X:%02X name='%s'\n",
                            conn->addr[5], conn->addr[4], conn->addr[3], conn->addr[2], conn->addr[1], conn->addr[0],
                            hid_state.last_connected_name);
@@ -2335,6 +2420,7 @@ static void sm_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
                         hid_state.last_connected_name[sizeof(hid_state.last_connected_name) - 1] = '\0';
                     }
                     hid_state.has_last_connected = true;
+                    btstack_host_save_last_connected();
 
                     // Route based on BLE strategy
                     if (conn->profile && conn->profile->ble == BT_BLE_DIRECT_ATT) {
@@ -3427,7 +3513,7 @@ static ble_connection_t* find_connection_by_handle(hci_con_handle_t handle)
 static ble_connection_t* find_free_connection(void)
 {
     for (int i = 0; i < MAX_BLE_CONNECTIONS; i++) {
-        if (hid_state.connections[i].handle == 0) {
+        if (hid_state.connections[i].handle == HCI_CON_HANDLE_INVALID) {
             return &hid_state.connections[i];
         }
     }
@@ -4032,7 +4118,7 @@ bool btstack_classic_send_report(uint8_t conn_index, uint8_t report_id,
         uint8_t ble_index = conn_index - BLE_CONN_INDEX_OFFSET;
         if (ble_index >= MAX_BLE_CONNECTIONS) return false;
         ble_connection_t* conn = &hid_state.connections[ble_index];
-        if (conn->handle == 0 || !conn->hid_ready) return false;
+        if (conn->handle == HCI_CON_HANDLE_INVALID || !conn->hid_ready) return false;
         if (hid_state.hids_cid == 0) return false;
         uint8_t status = hids_client_send_write_report(hid_state.hids_cid, report_id,
                                                         HID_REPORT_TYPE_OUTPUT,
@@ -4232,7 +4318,7 @@ bool btstack_classic_get_connection(uint8_t conn_index, btstack_classic_conn_inf
         if (ble_index >= MAX_BLE_CONNECTIONS) return false;
 
         ble_connection_t* conn = &hid_state.connections[ble_index];
-        if (conn->handle == 0) return false;
+        if (conn->handle == HCI_CON_HANDLE_INVALID) return false;
 
         info->active = true;
         memcpy(info->bd_addr, conn->addr, 6);
@@ -4278,7 +4364,7 @@ uint8_t btstack_classic_get_connection_count(void)
         }
     }
     for (int i = 0; i < MAX_BLE_CONNECTIONS; i++) {
-        if (hid_state.connections[i].handle != 0) {
+        if (hid_state.connections[i].handle != HCI_CON_HANDLE_INVALID) {
             count++;
         }
     }
@@ -4299,7 +4385,7 @@ void btstack_host_disconnect_all_devices(void)
         }
     }
     for (int i = 0; i < MAX_BLE_CONNECTIONS; i++) {
-        if (hid_state.connections[i].handle != 0) {
+        if (hid_state.connections[i].handle != HCI_CON_HANDLE_INVALID) {
             gap_disconnect(hid_state.connections[i].handle);
         }
     }
@@ -4317,7 +4403,7 @@ void btstack_host_delete_all_bonds(void)
 {
     printf("[BTSTACK_HOST] Deleting all Bluetooth bonds...\n");
 
-#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32)
+#if !defined(BTSTACK_USE_CYW43) && !defined(BTSTACK_USE_ESP32) && !defined(BTSTACK_USE_NRF)
     // Erase BTstack flash banks to force clean re-initialization
     // This is more reliable than using BTstack's delete APIs when flash was corrupted
     btstack_erase_flash_banks();

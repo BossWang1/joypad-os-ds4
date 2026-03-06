@@ -1,7 +1,7 @@
 // platform.h - Platform Hardware Abstraction Layer
 //
 // Thin abstraction over platform-specific APIs (time, identity, reboot).
-// Implementations: rp2040/platform_rp2040.c, esp32/platform_esp32.c
+// Implementations: rp2040/platform_rp2040.c, esp32/platform_esp32.c, nrf/platform_nrf.c
 
 #ifndef PLATFORM_H
 #define PLATFORM_H
@@ -10,8 +10,8 @@
 #include <stddef.h>
 
 // RP2040 __not_in_flash_func places functions in RAM for timing.
-// On ESP32 this is not needed — define as no-op if not already defined.
-#ifdef PLATFORM_ESP32
+// On non-RP2040 platforms this is not needed — define as no-op.
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_NRF)
   #ifndef __not_in_flash_func
     #define __not_in_flash_func(func) func
   #endif

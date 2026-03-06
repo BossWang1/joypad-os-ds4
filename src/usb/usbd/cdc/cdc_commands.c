@@ -11,7 +11,7 @@
 #include "core/services/players/manager.h"
 #include "core/services/players/feedback.h"
 #include "platform/platform.h"
-#ifndef PLATFORM_ESP32
+#if !defined(PLATFORM_ESP32) && !defined(PLATFORM_NRF)
 #include "pico/stdio.h"
 #include "pico/stdio/driver.h"
 #endif
@@ -66,17 +66,17 @@ static void log_stdio_out_chars(const char *buf, int len)
     }
 }
 
-#ifdef PLATFORM_ESP32
-// ESP32: capture printf by replacing stdout with a custom FILE* (funopen)
-// that feeds output into the ring buffer AND writes to the original UART.
-static FILE *esp32_uart_stdout = NULL;
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_NRF)
+// ESP32/nRF: capture printf by replacing stdout with a custom FILE* (funopen)
+// that feeds output into the ring buffer AND writes to the original output.
+static FILE *platform_orig_stdout = NULL;
 
-static int esp32_log_writefn(void *cookie, const char *buf, int len)
+static int platform_log_writefn(void *cookie, const char *buf, int len)
 {
     (void)cookie;
     log_stdio_out_chars(buf, len);
-    if (esp32_uart_stdout) {
-        fwrite(buf, 1, len, esp32_uart_stdout);
+    if (platform_orig_stdout) {
+        fwrite(buf, 1, len, platform_orig_stdout);
     }
     return len;
 }
@@ -1353,10 +1353,10 @@ void cdc_commands_init(void)
     cdc_protocol_init(&protocol_ctx, packet_handler);
 
     // Register stdio hook to capture printf output into ring buffer
-#ifdef PLATFORM_ESP32
-    // Replace stdout with a tee: ring buffer + original UART
-    esp32_uart_stdout = stdout;
-    FILE *f = funopen(NULL, NULL, esp32_log_writefn, NULL, NULL);
+#if defined(PLATFORM_ESP32) || defined(PLATFORM_NRF)
+    // Replace stdout with a tee: ring buffer + original output
+    platform_orig_stdout = stdout;
+    FILE *f = funopen(NULL, NULL, platform_log_writefn, NULL, NULL);
     if (f) {
         setvbuf(f, NULL, _IONBF, 0);
         stdout = f;

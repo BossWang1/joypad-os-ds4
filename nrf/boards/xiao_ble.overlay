@@ -1,0 +1,16 @@
+/* Joypad bt2usb — Seeed XIAO nRF52840 devicetree overlay
+ *
+ * TinyUSB drives USB hardware directly, so disable Zephyr's USBD node.
+ * Console redirected to UART0 (RTT is the actual debug output).
+ */
+
+&usbd {
+	status = "disabled";
+};
+
+/ {
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+};

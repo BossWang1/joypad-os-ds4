@@ -46,6 +46,7 @@ make gc2usb_kb2040     # GameCube → USB HID
 make n642dc_kb2040     # N64 → Dreamcast
 make bt2usb_pico_w     # BT-only → USB HID (Pico W)
 make bt2usb_esp32s3    # BLE-only → USB HID (ESP32-S3, requires ESP-IDF)
+make bt2usb_xiao_ble   # BLE-only → USB HID (Seeed XIAO nRF52840, requires NCS)
 make wifi2usb_pico_w   # WiFi → USB HID (Pico W)
 
 # Build all (RP2040 targets only)
@@ -73,7 +74,7 @@ Output: `releases/joypad_<commit>_<app>_<board>.uf2`
 | `usb23do` | RP2040-Zero | USB/BT | 3DO |
 | `usb2loopy` | KB2040 | USB/BT | Loopy |
 | `usb2usb` | Feather/RP2040-Zero | USB/BT | USB HID |
-| `bt2usb` | Pico W/Pico 2 W/ESP32-S3 | BT/BLE | USB HID |
+| `bt2usb` | Pico W/Pico 2 W/ESP32-S3/XIAO nRF52840 | BT/BLE | USB HID |
 | `wifi2usb` | Pico W/Pico 2 W | WiFi (JOCP) | USB HID |
 | `snes2usb` | KB2040 | SNES | USB HID |
 | `n642usb` | KB2040 | N64 | USB HID |
@@ -171,6 +172,20 @@ esp/                                # ESP-IDF build directory (ESP32-S3)
     ├── btstack_hal_esp32.c         # BTstack HAL glue
     ├── btstack_config.h            # BLE-only BTstack config
     └── tusb_config_esp32.h         # ESP32-S3 TinyUSB config
+nrf/                                # nRF Connect SDK build directory (nRF52840)
+├── CMakeLists.txt                  # Zephyr app project file
+├── Makefile                        # Build/flash/monitor shortcuts
+├── prj.conf                        # Zephyr Kconfig (BT HCI raw, no Zephyr USB)
+├── boards/                         # Board-specific overlays
+│   ├── xiao_ble.overlay            # Disable Zephyr USBD node
+│   └── xiao_ble.conf               # XIAO nRF52840 board config
+└── src/
+    ├── main.c                      # Zephyr entry point
+    ├── flash_nrf.c                 # NVS-based flash persistence
+    ├── button_nrf.c                # Button stub (no user button)
+    ├── ws2812_nrf.c                # NeoPixel stub
+    ├── btstack_config.h            # BLE-only BTstack config wrapper
+    └── tusb_config_nrf.h           # nRF5x TinyUSB config
 ```
 
 ### Data Flow
@@ -341,6 +356,26 @@ Key differences from RP2040:
 
 See `docs/ESP32.md` for full setup, architecture, and board details.
 
+## nRF52840 Development
+
+The `bt2usb` app also runs on Seeed XIAO nRF52840 (xiao_ble), using BLE (no Classic BT) for controller input and USB for HID output. Uses nRF Connect SDK (Zephyr) with BTstack + TinyUSB (not Zephyr native stacks) to maximize shared code.
+
+```bash
+# Prerequisites: nRF Connect SDK v3.1.0+ (installed via make init-nrf)
+make init-nrf                # One-time NCS workspace setup
+make bt2usb_xiao_ble         # Build
+make flash-bt2usb_xiao_ble   # Flash via UF2 bootloader
+make monitor-bt2usb_xiao_ble # UART serial monitor
+```
+
+Key differences from RP2040:
+- **BLE only** - nRF52840 supports Classic BT but this port is BLE-only like ESP32; only BLE controllers work
+- **Zephyr RTOS** - BTstack runs in its own Zephyr thread (`k_thread_create`); main loop yields via `k_msleep(1)`
+- **Raw HCI** - Zephyr provides raw HCI passthrough (`CONFIG_BT_HCI_RAW=y`), BTstack acts as BLE host
+- **TinyUSB owns USB** - Zephyr USB stack disabled; TinyUSB's `dcd_nrf5x.c` drives hardware directly
+- **RTT console** - Since TinyUSB owns USB, debug output uses Segger RTT (not CDC)
+- **Build system** - nRF Connect SDK/west/CMake under `nrf/`, separate from `src/` and `esp/`
+
 ## Common Pitfalls
 
 - **GameCube requires 130MHz** - `set_sys_clock_khz(130000, true)`
@@ -353,6 +388,9 @@ See `docs/ESP32.md` for full setup, architecture, and board details.
 - **ESP32 `tud_task()` blocks forever** - On FreeRTOS, `tud_task()` = `tud_task_ext(UINT32_MAX, false)`. Always use `tud_task_ext(1, false)` on ESP32
 - **ESP32 BTstack threading** - All BTstack API calls must happen in the BTstack FreeRTOS task, not the main task
 - **ESP32 Classic BT guards** - `gap_inquiry_*`, `gap_set_class_of_device()`, `gap_discoverable_control()` are Classic-only; guard with `#ifndef BTSTACK_USE_ESP32`
+- **nRF Classic BT guards** - Same Classic-only APIs must be guarded with `#ifndef BTSTACK_USE_NRF`
+- **nRF BTstack threading** - All BTstack API calls must happen in the BTstack Zephyr thread, not the main thread
+- **nRF Zephyr USB disabled** - `CONFIG_USB_DEVICE_STACK=n` and `&usbd { status = "disabled"; }` required so TinyUSB can own the USB peripheral
 
 ## External Dependencies
 
