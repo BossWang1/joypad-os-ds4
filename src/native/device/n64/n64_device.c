@@ -68,13 +68,23 @@ void n64_init()
 {
     // N64 joybus runs at standard clock (no overclock needed unlike GameCube)
 
+    // PIO/joybus setup FIRST — this is time-critical.
+    // Console probes for controllers at boot and may stop if no response.
+    int sm = -1;
+    int offset = -1;
+
+    N64Console_init(&n64, N64_DATA_PIN, pio, sm, offset);
+    n64_report = default_n64_report;
+
+    printf("[n64] Joybus on PIO%d GP%d SM=%d (ready)\n",
+           pio == pio0 ? 0 : 1, N64_DATA_PIN, n64._port.sm);
+
+    // Non-critical init (can happen after Core 1 starts listening)
     // Configure custom UART pins (only for boards with dedicated UART)
     #ifdef UART_TX_PIN
     gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
     #endif
-
-    stdio_init_all();
 
     // Initialize flash settings system
     flash_init();
@@ -113,18 +123,6 @@ void n64_init()
     if (!gpio_get(N64_3V3_PIN)) reset_usb_boot(0, 0);
     #endif
 
-    int sm = -1;
-    int offset = -1;
-
-    printf("[n64] Initializing joybus on PIO%d, data pin GP%d\n",
-           pio == pio0 ? 0 : 1, N64_DATA_PIN);
-
-    N64Console_init(&n64, N64_DATA_PIN, pio, sm, offset);
-    n64_report = default_n64_report;
-
-    printf("[n64] Joybus initialized: SM=%d, offset=%d\n",
-           n64._port.sm, n64._port.offset);
-
     const profile_t* profile = profile_get_active(OUTPUT_TARGET_N64);
     if (profile) {
         printf("[n64] Active profile: %s\n", profile->name);
@@ -145,16 +143,17 @@ void n64_init()
 // via n64_task() instead.
 void __not_in_flash_func(core1_task)(void)
 {
-    printf("[n64] Core 1 started, waiting for console...\n");
+    printf("[n64] Core 1 started, listening for console...\n");
 
-    // Note: use busy_wait_us, not sleep_ms — Core 1 has no alarm pool
-    // N64Console_Detect uses flash functions (busy_wait_us, joybus_send_bytes)
-    // but this runs before any BT device pairs, so no flash writes occur yet.
-    while (!N64Console_Detect(&n64)) {
-        busy_wait_us(100000);
-    }
-    n64_console_active = true;
-
+    // Skip separate Detect phase — go straight to WaitForPoll which:
+    // 1. Is fully flash-safe (uses RAM-only helpers)
+    // 2. Handles all command types (PROBE, RESET, POLL, READ, WRITE)
+    // 3. Sets n64_console_active on first received command
+    // 4. Never has gaps in listening (no SM re-init between attempts)
+    //
+    // N64Console_Detect used flash-resident functions (busy_wait_us,
+    // joybus_send_bytes) which could hang when Core 0 locks flash during
+    // BT/CYW43 initialization, causing missed probe response windows.
     while (1) {
         N64Console_WaitForPoll(&n64);
     }
@@ -188,7 +187,7 @@ static inline int8_t analog_u8_to_n64(uint8_t val) {
 
 // Map C-buttons from right analog stick position
 // When right stick exceeds threshold, activate corresponding C-button
-#define C_BUTTON_THRESHOLD 64  // Distance from center (128 +/- 64)
+#define C_BUTTON_THRESHOLD 96  // Distance from center (128 +/- 96) — high to avoid drift
 
 static void map_c_buttons_from_stick(uint8_t rx, uint8_t ry, n64_report_t* report) {
     if (rx > (128 + C_BUTTON_THRESHOLD)) report->c_right = 1;

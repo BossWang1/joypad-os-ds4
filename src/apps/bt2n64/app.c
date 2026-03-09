@@ -246,10 +246,14 @@ void app_task(void)
     }
 
     // Forward rumble from N64 console to BT controllers
+    // N64 rumble pak is binary (on/off) with a single weak motor.
+    // Use moderate intensity on left (heavy) motor only to approximate the feel.
     if (n64_output_interface.get_rumble) {
         uint8_t rumble = n64_output_interface.get_rumble();
+        uint8_t left = rumble ? 128 : 0;   // Heavy motor at ~50%
+        uint8_t right = rumble ? 40 : 0;   // Light motor gentle
         for (int i = 0; i < playersCount; i++) {
-            feedback_set_rumble(i, rumble, rumble);
+            feedback_set_rumble(i, left, right);
         }
     }
 

@@ -113,13 +113,10 @@ int main(void)
 
   printf("\n[joypad] Starting...\n");
 
-  sleep_ms(50);  // Brief pause for stability
-
-  // Launch Core 1 early for flash_safe_execute support
+  // Launch Core 1 ASAP for flash_safe_execute support
   // Core 1 will init flash safety and wait for task assignment
-  printf("[joypad] Launching core1 for flash safety...\n");
   multicore_launch_core1(core1_wrapper);
-  sleep_ms(10);  // Brief delay to let Core 1 initialize
+  sleep_ms(1);  // Minimal delay to let Core 1 call flash_safe_execute_core_init()
 
   // Initialize output interfaces and start Core 1 task FIRST.
   // Timing-critical protocols (joybus, maple bus) must start listening ASAP —
