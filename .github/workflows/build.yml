@@ -191,6 +191,13 @@ jobs:
           west init -m https://github.com/nrfconnect/sdk-nrf.git --mr v3.1.0
           west update --narrow -o=--depth=1
 
+      - name: Install Zephyr SDK
+        run: |
+          wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.0/zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz
+          tar xf zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz -C /opt/
+          /opt/zephyr-sdk-0.17.0/setup.sh -t arm-zephyr-eabi -c
+          echo "ZEPHYR_SDK_INSTALL_DIR=/opt/zephyr-sdk-0.17.0" >> $GITHUB_ENV
+
       - name: Get commit hash
         id: commit
         run: echo "hash=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
