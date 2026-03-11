@@ -22,6 +22,9 @@ GamecubeConsole gc;
 gc_report_t gc_report;
 PIO pio = pio0;
 
+// Config mode flag - set by app when GC 3.3V not detected
+bool gc_config_mode = false;
+
 // GameCube-specific state for USB device output
 static uint8_t gc_rumble = 0;
 static uint8_t gc_kb_led = 0;
@@ -220,13 +223,8 @@ void ngc_init()
   gpio_set_dir(BOOTSEL_PIN, GPIO_IN);
   gpio_pull_up(BOOTSEL_PIN);
 
-  // Reboot into bootsel mode if GC 3.3V not detected.
-  gpio_init(GC_3V3_PIN);
-  gpio_set_dir(GC_3V3_PIN, GPIO_IN);
-  gpio_pull_down(GC_3V3_PIN);
-
-  sleep_ms(200);
-  if (!gpio_get(GC_3V3_PIN)) reset_usb_boot(0, 0);
+  // GC 3.3V check is now handled by the app layer (app_get_output_interfaces)
+  // ngc_init() is only called when GC 3.3V is detected (play mode)
 
   int sm = -1;
   int offset = -1;

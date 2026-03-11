@@ -88,6 +88,10 @@ static void cdc_process_command(const char* cmd)
     }
     // MODES - List available modes
     else if (strcmp(cmd, "MODES") == 0 || strcmp(cmd, "MODES?") == 0) {
+#ifdef CONFIG_NGC
+        cdc_data_write_str("Available modes:\r\n");
+        cdc_data_write_str("  13: CDC (config only)\r\n");
+#else
         cdc_data_write_str("Available modes:\r\n");
         cdc_data_write_str("  0: DInput - default\r\n");
         cdc_data_write_str("  1: Xbox Original (XID)\r\n");
@@ -98,6 +102,7 @@ static void cdc_process_command(const char* cmd)
         cdc_data_write_str("  6: PS Classic\r\n");
         cdc_data_write_str("  7: Xbox One\r\n");
         cdc_data_write_str("  8: XAC Compat (not in toggle)\r\n");
+#endif
     }
     // VERSION or VER? - Query firmware version
     else if (strcmp(cmd, "VERSION") == 0 || strcmp(cmd, "VER?") == 0) {

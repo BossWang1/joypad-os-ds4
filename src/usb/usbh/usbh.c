@@ -129,7 +129,13 @@ void usbh_init(void)
     printf("[usbh] Warning: CONFIG_USB without PIO USB support\n");
 #else
     // Single USB mode: Host on rhport 0 (native USB)
-    tusb_init();
+    {
+        tusb_rhport_init_t host_init = {
+            .role = TUSB_ROLE_HOST,
+            .speed = TUSB_SPEED_FULL
+        };
+        tusb_init(0, &host_init);
+    }
 #endif
 
 #if CFG_TUH_BTD

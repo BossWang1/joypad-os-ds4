@@ -3,6 +3,10 @@
 //
 // This file contains app-specific initialization and logic.
 // The firmware calls app_init() after core system initialization.
+//
+// Mode detection:
+//   GC 3.3V on GPIO 6 → Play mode (USB host → GameCube joybus output)
+//   No 3.3V           → Config mode (USB device with CDC for web configuration)
 
 #include "app.h"
 #include "profiles.h"
@@ -12,8 +16,11 @@
 #include "core/services/profiles/profile.h"
 #include "core/input_interface.h"
 #include "core/output_interface.h"
+#include "core/services/leds/leds.h"
 #include "native/device/gamecube/gamecube_device.h"
 #include "usb/usbh/usbh.h"
+#include "usb/usbd/usbd.h"
+#include "pico/stdlib.h"
 #include <stdio.h>
 
 // ============================================================================
@@ -24,7 +31,7 @@ static const profile_config_t app_profile_config = {
     .output_profiles = {
         [OUTPUT_TARGET_GAMECUBE] = &gc_profile_set,
     },
-    .shared_profiles = NULL,
+    .shared_profiles = &gc_profile_set,  // Also shared so CDC config can find profiles
 };
 
 // ============================================================================
@@ -37,6 +44,11 @@ static const InputInterface* input_interfaces[] = {
 
 const InputInterface** app_get_input_interfaces(uint8_t* count)
 {
+    if (gc_config_mode) {
+        // Config mode: no USB host input needed
+        *count = 0;
+        return NULL;
+    }
     *count = sizeof(input_interfaces) / sizeof(input_interfaces[0]);
     return input_interfaces;
 }
@@ -47,14 +59,34 @@ const InputInterface** app_get_input_interfaces(uint8_t* count)
 
 extern const OutputInterface gamecube_output_interface;
 
-static const OutputInterface* output_interfaces[] = {
+static const OutputInterface* gc_output_interfaces[] = {
     &gamecube_output_interface,
+};
+
+static const OutputInterface* cdc_output_interfaces[] = {
+    &usbd_output_interface,
 };
 
 const OutputInterface** app_get_output_interfaces(uint8_t* count)
 {
-    *count = sizeof(output_interfaces) / sizeof(output_interfaces[0]);
-    return output_interfaces;
+    // Detect mode by checking GC 3.3V on GPIO 6
+    // This runs before any output init, so we can select the right interface
+    gpio_init(GC_3V3_PIN);
+    gpio_set_dir(GC_3V3_PIN, GPIO_IN);
+    gpio_pull_down(GC_3V3_PIN);
+    sleep_ms(200);  // Allow GC console power to stabilize
+
+    if (!gpio_get(GC_3V3_PIN)) {
+        // No GameCube 3.3V detected → config mode (USB device with CDC)
+        gc_config_mode = true;
+        *count = 1;
+        return cdc_output_interfaces;
+    }
+
+    // GameCube 3.3V detected → play mode (USB host → GC output)
+    gc_config_mode = false;
+    *count = sizeof(gc_output_interfaces) / sizeof(gc_output_interfaces[0]);
+    return gc_output_interfaces;
 }
 
 // ============================================================================
@@ -63,7 +95,30 @@ const OutputInterface** app_get_output_interfaces(uint8_t* count)
 
 void app_init(void)
 {
-    printf("[app:usb2gc] Initializing GCUSB v%s\n", APP_VERSION);
+    if (gc_config_mode) {
+        printf("[app:usb2gc] Config mode - CDC serial for web configuration\n");
+
+        // Show orange LED to indicate config mode
+        leds_set_color(64, 32, 0);
+
+        // Minimal router config for CDC output
+        router_config_t router_cfg = {
+            .mode = ROUTING_MODE_MERGE,
+            .merge_mode = MERGE_BLEND,
+            .max_players_per_output = {
+                [OUTPUT_TARGET_USB_DEVICE] = 1,
+            },
+            .merge_all_inputs = true,
+        };
+        router_init(&router_cfg);
+
+        // Initialize profile system so web config can read/write profiles
+        profile_init(&app_profile_config);
+
+        return;
+    }
+
+    printf("[app:usb2gc] Initializing usb2gc v%s\n", APP_VERSION);
 
     // Configure router for GCUSB
     router_config_t router_cfg = {
@@ -108,6 +163,8 @@ void app_init(void)
 
 void app_task(void)
 {
+    if (gc_config_mode) return;  // Config mode: nothing to do here
+
     // Forward rumble from GameCube console to USB controllers
     if (gamecube_output_interface.get_rumble) {
         uint8_t rumble = gamecube_output_interface.get_rumble();

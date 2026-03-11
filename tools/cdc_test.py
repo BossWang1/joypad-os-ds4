@@ -150,8 +150,8 @@ class CDCProtocol:
         """Send a command and wait for response"""
         payload = {'cmd': cmd}
         if args:
-            payload['args'] = args
-        payload_bytes = json.dumps(payload).encode('utf-8')
+            payload.update(args)
+        payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
 
         packet = build_packet(MSG_CMD, self.seq, payload_bytes)
         self.seq = (self.seq + 1) & 0xFF

@@ -86,7 +86,7 @@ static bool pending_flags[USB_MAX_PLAYERS] = {false};
 static char usb_serial_str[USB_SERIAL_LEN + 1];
 
 // Current output mode (persisted to flash)
-#ifdef CONFIG_USB2BLE
+#if defined(CONFIG_USB2BLE) || defined(CONFIG_NGC)
 #ifndef USBD_DEFAULT_MODE
 #define USBD_DEFAULT_MODE USB_OUTPUT_MODE_CDC
 #endif
@@ -385,6 +385,14 @@ bool usbd_set_mode(usb_output_mode_t mode)
         return false;
     }
 
+#ifdef CONFIG_NGC
+    // GameCube config mode: CDC-only, no mode switching allowed
+    if (mode != USB_OUTPUT_MODE_CDC) {
+        printf("[usbd] Mode switching disabled (GameCube CDC-only)\n");
+        return false;
+    }
+#endif
+
     // Supported modes: SInput, HID, Xbox OG, XInput, PS3, PS4, Switch, PS Classic, Xbox One, XAC, KB/Mouse, GC Adapter
     if (mode != USB_OUTPUT_MODE_SINPUT &&
         mode != USB_OUTPUT_MODE_HID &&
@@ -499,6 +507,10 @@ void usbd_get_mode_color(usb_output_mode_t mode, uint8_t *r, uint8_t *g, uint8_t
 
 usb_output_mode_t usbd_get_next_mode(void)
 {
+#ifdef CONFIG_NGC
+    // GameCube config mode: CDC-only, no mode cycling
+    return USB_OUTPUT_MODE_CDC;
+#else
     // Cycle through common modes: SInput → XInput → PS3 → PS4 → Switch → KB/Mouse → SInput
     // (Skip less common: DInput, PS Classic, Xbox Original, Xbox One, XAC)
     switch (output_mode) {
@@ -516,16 +528,21 @@ usb_output_mode_t usbd_get_next_mode(void)
         default:
             return USB_OUTPUT_MODE_SINPUT;
     }
+#endif
 }
 
 bool usbd_reset_to_hid(void)
 {
+#ifdef CONFIG_NGC
+    return false;  // GameCube config mode: no mode reset
+#else
     // Reset to SInput (the new default, replacing DInput)
     if (output_mode != USB_OUTPUT_MODE_SINPUT) {
         usbd_set_mode(USB_OUTPUT_MODE_SINPUT);
         return true;
     }
     return false;
+#endif
 }
 
 // ============================================================================
@@ -601,6 +618,10 @@ void usbd_init(void)
         printf("[usbd] No valid flash settings, using defaults\n");
     }
 
+#ifdef CONFIG_NGC
+    // GameCube config mode: always force CDC-only (ignore flash-saved mode)
+    output_mode = USB_OUTPUT_MODE_CDC;
+#endif
     printf("[usbd] Mode: %s\n", mode_names[output_mode]);
 
     // Build runtime config descriptors (must happen before tusb_init)

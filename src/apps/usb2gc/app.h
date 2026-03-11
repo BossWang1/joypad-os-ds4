@@ -10,7 +10,7 @@
 // ============================================================================
 // APP METADATA
 // ============================================================================
-#define APP_NAME "GCUSB"
+#define APP_NAME "usb2gc"
 #define APP_VERSION "2.0.0"
 #define APP_DESCRIPTION "USB to GameCube adapter"
 #define APP_AUTHOR "RobertDaleSmith"
@@ -26,6 +26,7 @@
 // Output drivers
 #define REQUIRE_NATIVE_GAMECUBE_OUTPUT 1
 #define GAMECUBE_OUTPUT_PORTS 1        // Single port for now (future: 4)
+#define REQUIRE_USB_DEVICE 1           // CDC config mode when not connected to GameCube
 
 // Services
 #define REQUIRE_FLASH_SETTINGS 1

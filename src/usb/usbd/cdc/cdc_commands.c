@@ -323,6 +323,11 @@ static void cmd_mode_list(const char* json)
         // Skip DInput (HID) mode - replaced by SInput
         if (i == USB_OUTPUT_MODE_HID) continue;
 
+#ifdef CONFIG_NGC
+        // GameCube config mode: only expose CDC mode
+        if (i != USB_OUTPUT_MODE_CDC) continue;
+#endif
+
         if (!first) pos += snprintf(response_buf + pos, sizeof(response_buf) - pos, ",");
         first = false;
         pos += snprintf(response_buf + pos, sizeof(response_buf) - pos,
@@ -416,9 +421,21 @@ static void cmd_ble_mode_list(const char* json)
 //   Index 0: Virtual "Default" passthrough (builtin=true, editable=false)
 //   Index 1 to custom_count: Custom profiles (editable=true)
 
+// Get the output target for profile queries
+// Most apps use OUTPUT_TARGET_USB_DEVICE, but console output apps
+// (e.g., usb2gc) register profiles under their native output target
+static output_target_t get_profile_target(void)
+{
+#ifdef CONFIG_NGC
+    return OUTPUT_TARGET_GAMECUBE;
+#else
+    return OUTPUT_TARGET_USB_DEVICE;
+#endif
+}
+
 static uint8_t get_builtin_count(void)
 {
-    return profile_get_count(OUTPUT_TARGET_USB_DEVICE);
+    return profile_get_count(get_profile_target());
 }
 
 static uint8_t get_custom_count(void)
@@ -477,7 +494,7 @@ static void cmd_profile_list(const char* json)
     int active;
     if (builtin_count > 0) {
         // Use built-in profile active index, or offset for custom
-        active = profile_get_active_index(OUTPUT_TARGET_USB_DEVICE);
+        active = profile_get_active_index(get_profile_target());
         // TODO: Handle custom profile selection for apps with built-in profiles
     } else {
         // No built-in profiles - use flash active index (already 0-based with virtual default)
@@ -492,7 +509,7 @@ static void cmd_profile_list(const char* json)
     // Add built-in profiles (or virtual Default)
     if (builtin_count > 0) {
         for (int i = 0; i < builtin_count && pos < (int)sizeof(response_buf) - 80; i++) {
-            const char* name = profile_get_name(OUTPUT_TARGET_USB_DEVICE, i);
+            const char* name = profile_get_name(get_profile_target(), i);
             if (idx > 0) pos += snprintf(response_buf + pos, sizeof(response_buf) - pos, ",");
             pos += snprintf(response_buf + pos, sizeof(response_buf) - pos,
                             "{\"index\":%d,\"name\":\"%s\",\"builtin\":true,\"editable\":false}",
@@ -528,7 +545,7 @@ static void cmd_profile_get(const char* json)
         uint8_t builtin_count = get_builtin_count();
         int active;
         if (builtin_count > 0) {
-            active = profile_get_active_index(OUTPUT_TARGET_USB_DEVICE);
+            active = profile_get_active_index(get_profile_target());
         } else {
             flash_t* settings = flash_get_settings();
             active = settings ? settings->active_profile_index : 0;
@@ -553,7 +570,7 @@ static void cmd_profile_get(const char* json)
         // Built-in profile (or virtual Default)
         const char* name;
         if (builtin_count > 0) {
-            name = profile_get_name(OUTPUT_TARGET_USB_DEVICE, index);
+            name = profile_get_name(get_profile_target(), index);
         } else {
             name = "Default";
         }
@@ -606,8 +623,8 @@ static void cmd_profile_set(const char* json)
 
     if (builtin_count > 0 && index < builtin_count) {
         // Select built-in profile
-        profile_set_active(OUTPUT_TARGET_USB_DEVICE, index);
-        const char* name = profile_get_name(OUTPUT_TARGET_USB_DEVICE, index);
+        profile_set_active(get_profile_target(), index);
+        const char* name = profile_get_name(get_profile_target(), index);
         snprintf(response_buf, sizeof(response_buf),
                  "{\"ok\":true,\"index\":%d,\"name\":\"%s\"}",
                  index, name ? name : "Default");
@@ -878,7 +895,7 @@ static void cmd_profile_clone(const char* json)
         // Generate name based on source
         if (is_builtin_profile(source_index)) {
             const char* src_name = (get_builtin_count() > 0) ?
-                profile_get_name(OUTPUT_TARGET_USB_DEVICE, source_index) : "Default";
+                profile_get_name(get_profile_target(), source_index) : "Default";
             snprintf(new_name, CUSTOM_PROFILE_NAME_LEN, "%.6s Copy", src_name ? src_name : "Default");
         } else {
             int src_custom_idx = unified_to_custom_index(source_index);

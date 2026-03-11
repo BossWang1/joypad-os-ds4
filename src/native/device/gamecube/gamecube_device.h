@@ -48,6 +48,7 @@
 
 // Global variables
 extern PIO pio;
+extern bool gc_config_mode;  // True when no GC 3.3V detected (CDC config mode)
 
 // Function declarations
 void ngc_init(void);
