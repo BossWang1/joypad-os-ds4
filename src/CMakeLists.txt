@@ -458,7 +458,7 @@ pico_generate_pio_header(joypad_ngc_rp2040zero ${CMAKE_CURRENT_LIST_DIR}/lib/joy
 
 # --- Nuon ---
 add_executable(joypad_nuon)
-target_compile_definitions(joypad_nuon PRIVATE CONFIG_NUON=1)
+target_compile_definitions(joypad_nuon PRIVATE CONFIG_NUON=1 CONFIG_NO_NEOPIXEL=1)
 target_sources(joypad_nuon PUBLIC ${COMMON_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/native/device/nuon/nuon_device.c
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2nuon/app.c
@@ -1067,6 +1067,8 @@ if (PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w")
     target_compile_definitions(joypad_bt2nuon PRIVATE
         CONFIG_BT2NUON=1
         DISABLE_USB_HOST=1
+        CONFIG_NO_NEOPIXEL=1
+        CONFIG_NO_FLASH_LOCKOUT=1
         USE_BOOTSEL_BUTTON=1
         CYW43_LWIP=0
         BTSTACK_USE_CYW43=1

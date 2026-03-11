@@ -52,7 +52,11 @@ static volatile bool core1_task_ready = false;
 static void core1_wrapper(void) {
   // Initialize multicore lockout for flash_safe_execute to work
   // This allows Core 0 to safely write to flash while Core 1 is running
+  // NOTE: Skip for timing-critical output protocols (Nuon polyface, etc.)
+  // The lockout interrupt can pause Core 1 mid-protocol and break communication.
+#ifndef CONFIG_NO_FLASH_LOCKOUT
   flash_safe_execute_core_init();
+#endif
 
   // Wait for Core 0 to assign a task (or signal no task needed)
   while (!core1_task_ready) {
@@ -109,6 +113,13 @@ static void __not_in_flash_func(core0_main)(void)
 
 int main(void)
 {
+#ifdef BOARD_LED_PIN
+  // Early boot indicator — toggle LED before any PIO init
+  gpio_init(BOARD_LED_PIN);
+  gpio_set_dir(BOARD_LED_PIN, GPIO_OUT);
+  gpio_put(BOARD_LED_PIN, 1);
+#endif
+
   // ========================================================================
   // PHASE 1: Time-critical — get Core 1 listening ASAP (before stdio/printf)
   // Console probes happen ~100-500ms after power-on. Every ms counts.
@@ -128,10 +139,7 @@ int main(void)
     }
   }
 
-  // Signal Core 1 to start listening — no printf, no delay!
-  // Core 1's flash_safe_execute_core_init() runs in parallel and finishes
-  // before the __wfe() check. The __sev() sets the event flag so Core 1
-  // proceeds as soon as flash_safe_init completes.
+  // Signal Core 1 to start listening
   for (uint8_t i = 0; i < output_count; i++) {
     if (outputs[i] && outputs[i]->core1_task) {
       core1_actual_task = outputs[i]->core1_task;

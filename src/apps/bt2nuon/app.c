@@ -169,6 +169,8 @@ void app_init(void)
                                                 profile_get_active_index(OUTPUT_TARGET_NUON));
 
     // Initialize Bluetooth transport
+    // TODO: CYW43 SPI on PIO0 disrupts polyface_read on Core 1.
+    // Needs polyface_send optimization (≤25 instr) so CYW43 fits on PIO1.
     printf("[app:bt2nuon] Initializing Bluetooth...\n");
     bt_init(&bt_transport_cyw43);
 

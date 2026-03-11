@@ -1,15 +1,6 @@
 // nuon.c
 
-#include "nuon_device.h"
-#include "nuon_buttons.h"
-#include "core/services/codes/codes.h"
-#include "core/services/hotkeys/hotkeys.h"
-#include "core/services/profiles/profile.h"
-#include <math.h>
-
-PIO pio;
-uint sm1, sm2;
-int crc_lut[256]; // crc look up table
+#include "nuon.h"
 
 // Definition of global variables
 uint32_t output_buttons_0 = 0;
@@ -22,38 +13,6 @@ uint32_t output_quad_x = 0;
 uint32_t device_mode   = 0b10111001100000111001010100000000;
 uint32_t device_config = 0b10000000100000110000001100000000;
 uint32_t device_switch = 0b10000000100000110000001100000000;
-
-// Console-local state (not input data)
-#include "core/router/router.h"
-
-// Core 1 → Core 0 diagnostic
-static volatile uint32_t pf_diag_count = 0;
-
-// Stick-to-spinner configuration
-bool analog_stick_to_spinner = true;  // Enable right stick to spinner conversion
-static int16_t last_stick_angle[MAX_PLAYERS] = {0};  // Track last angle per player
-
-// IGR (In-Game Reset) combo button mask
-// This combo triggers GPIO pins for the Nuon internal IGR mod
-#define NUON_IGR_COMBO_MASK 0x3030  // Face buttons combo (preserved from original)
-#define NUON_IGR_HOLD_DURATION 2000 // Hold duration for power button (ms)
-
-// Forward declaration for GPIO trigger function
-static void trigger_button_press(uint8_t pin);
-
-// IGR callback for long hold (power button)
-static void nuon_igr_power_callback(uint8_t player, uint32_t held_ms) {
-    (void)player;
-    (void)held_ms;
-    trigger_button_press(POWER_PIN);
-}
-
-// IGR callback for quick tap (stop button)
-static void nuon_igr_stop_callback(uint8_t player, uint32_t held_ms) {
-    (void)player;
-    (void)held_ms;
-    trigger_button_press(STOP_PIN);
-}
 
 // init for nuon communication
 void nuon_init(void)
@@ -98,7 +57,7 @@ void nuon_init(void)
   device_config = crc_data_packet(0b11000000, 1);
   device_switch = crc_data_packet(0b11000000, 1);
 
-  pio = pio0;
+  pio = pio0; // Both state machines can run on the same PIO processor
 
   // Load the read and write programs, and configure a free state machines
   uint offset2 = pio_add_program(pio, &polyface_read_program);
@@ -109,60 +68,35 @@ void nuon_init(void)
   sm1 = pio_claim_unused_sm(pio1, true);
   polyface_send_program_init(pio1, sm1, offset1, DATAIO_PIN);
 
-  // NOTE: On Pico W, CYW43 must be kept off PIO0 to avoid disrupting
-  // polyface_read. This is handled by ensuring polyface_send fits on PIO1
-  // alongside CYW43's SPI program.
-
   // queue_init(&packet_queue, sizeof(int64_t), 1000);
-
-  // Register IGR hotkeys for internal Nuon reset mod
-  // Long hold (2s) triggers power button
-  HotkeyDef power_hotkey = {
-      .buttons = NUON_IGR_COMBO_MASK,
-      .duration_ms = NUON_IGR_HOLD_DURATION,
-      .trigger = HOTKEY_TRIGGER_ON_HOLD,
-      .callback = nuon_igr_power_callback,
-      .global = false
-  };
-  hotkeys_register(&power_hotkey);
-
-  // Quick tap (release before 2s) triggers stop button
-  HotkeyDef stop_hotkey = {
-      .buttons = NUON_IGR_COMBO_MASK,
-      .duration_ms = NUON_IGR_HOLD_DURATION,
-      .trigger = HOTKEY_TRIGGER_ON_TAP,
-      .callback = nuon_igr_stop_callback,
-      .global = false
-  };
-  hotkeys_register(&stop_hotkey);
 }
 
-// maps default joypad button bit order to nuon's button packet data structure
-uint32_t __not_in_flash_func(map_nuon_buttons)(uint32_t buttons)
+// maps default usbretro button bit order to nuon's button packet data structure
+uint32_t map_nuon_buttons(uint32_t buttons)
 {
   uint32_t nuon_buttons = 0x0080;
 
-  // Mapping the buttons (active-high: 1 = pressed)
-  nuon_buttons |= (buttons & JP_BUTTON_B2) ? NUON_BUTTON_C_DOWN : 0;  // Circle -> C-DOWN
-  nuon_buttons |= (buttons & JP_BUTTON_B1) ? NUON_BUTTON_A  : 0;  // Cross -> A
-  nuon_buttons |= (buttons & JP_BUTTON_S2) ? NUON_BUTTON_START : 0;  // Option -> START
-  nuon_buttons |= (buttons & JP_BUTTON_S1) ? NUON_BUTTON_NUON : 0;  // Share -> NUON/Z
-  nuon_buttons |= (buttons & JP_BUTTON_DD) ? NUON_BUTTON_DOWN : 0;  // Dpad Down -> D-DOWN
-  nuon_buttons |= (buttons & JP_BUTTON_DL) ? NUON_BUTTON_LEFT : 0;  // Dpad Left -> D-LEFT
-  nuon_buttons |= (buttons & JP_BUTTON_DU) ? NUON_BUTTON_UP : 0;  // Dpad Up -> D-UP
-  nuon_buttons |= (buttons & JP_BUTTON_DR) ? NUON_BUTTON_RIGHT : 0;  // Dpad Right -> D-RIGHT
+  // Mapping the buttons from the old format to the new format, inverting the logic
+  nuon_buttons |= (!(buttons & 0x00010)) ? 0x8000 : 0;  // Circle -> C-DOWN
+  nuon_buttons |= (!(buttons & 0x00020)) ? 0x4000 : 0;  // Cross -> A
+  nuon_buttons |= (!(buttons & 0x00080)) ? 0x2000 : 0;  // Option -> START
+  nuon_buttons |= (!(buttons & 0x00040)) ? 0x1000 : 0;  // Share -> SELECT
+  nuon_buttons |= (!(buttons & 0x00004)) ? 0x0800 : 0;  // Dpad Down -> D-DOWN
+  nuon_buttons |= (!(buttons & 0x00008)) ? 0x0400 : 0;  // Dpad Left -> D-LEFT
+  nuon_buttons |= (!(buttons & 0x00001)) ? 0x0200 : 0;  // Dpad Up -> D-UP
+  nuon_buttons |= (!(buttons & 0x00002)) ? 0x0100 : 0;  // Dpad Right -> D-RIGHT
   // Skipping the two buttons represented by 0x0080 and 0x0040 in the new format
-  nuon_buttons |= (buttons & JP_BUTTON_L1) ? NUON_BUTTON_L : 0;  // L1 -> L
-  nuon_buttons |= (buttons & JP_BUTTON_R1) ? NUON_BUTTON_R : 0;  // R1 -> R
-  nuon_buttons |= (buttons & JP_BUTTON_B3) ? NUON_BUTTON_B : 0;  // Square -> B
-  nuon_buttons |= (buttons & JP_BUTTON_B4) ? NUON_BUTTON_C_LEFT : 0;  // Triangle -> C-LEFT
-  nuon_buttons |= (buttons & JP_BUTTON_L2) ? NUON_BUTTON_C_UP : 0;  // L2 -> C-UP
-  nuon_buttons |= (buttons & JP_BUTTON_R2) ? NUON_BUTTON_C_RIGHT : 0;  // R2 -> C-RIGHT
+  nuon_buttons |= (!(buttons & 0x04000)) ? 0x0020 : 0;  // L1 -> L
+  nuon_buttons |= (!(buttons & 0x08000)) ? 0x0010 : 0;  // R1 -> R
+  nuon_buttons |= (!(buttons & 0x02000)) ? 0x0008 : 0;  // Square -> B
+  nuon_buttons |= (!(buttons & 0x01000)) ? 0x0004 : 0;  // Triangle -> C-LEFT
+  nuon_buttons |= (!(buttons & 0x00100)) ? 0x0002 : 0;  // L2 -> C-UP
+  nuon_buttons |= (!(buttons & 0x00200)) ? 0x0001 : 0;  // R2 -> C-RIGHT
 
   return nuon_buttons;
 }
 
-uint8_t __not_in_flash_func(eparity)(uint32_t data)
+uint8_t eparity(uint32_t data)
 {
   uint32_t eparity;
   eparity = (data>>16)^data;
@@ -174,7 +108,7 @@ uint8_t __not_in_flash_func(eparity)(uint32_t data)
 }
 
 // generates data response packet with crc check bytes
-uint32_t __not_in_flash_func(crc_data_packet)(int32_t value, int8_t size)
+uint32_t crc_data_packet(int32_t value, int8_t size)
 {
   uint32_t packet = 0;
   uint16_t crc = 0;
@@ -206,53 +140,15 @@ int crc_build_lut()
 	return(0);
 }
 
-int __not_in_flash_func(crc_calc)(unsigned char data, int crc)
+int crc_calc(unsigned char data, int crc)
 {
 	if (crc_lut[1]==0) crc_build_lut();
 	return(((crc_lut[((crc>>8)^data)&0xff])^(crc<<8))&0xffff);
 }
 
-static void trigger_button_press(uint8_t pin)
-{
-  // Configure the button pin as output
-  gpio_init(pin);
-  gpio_set_dir(pin, GPIO_OUT);
-
-  // Set the button pin to low
-  gpio_put(pin, 0);
-
-  // Wait for a brief moment
-  sleep_ms(100); // Wait for 100 milliseconds
-
-  // Reconfigure the button pin as an input
-  gpio_set_dir(pin, GPIO_IN);
-}
-
-void nuon_task()
-{
-  // Periodic diagnostic: verify PIO state and clock signal
-  static uint32_t diag_last = 0;
-  uint32_t now = to_ms_since_boot(get_absolute_time());
-  if (now - diag_last >= 2000) {
-    diag_last = now;
-    printf("[nuon] pf=%lu pl=%d\n",
-           (unsigned long)pf_diag_count, playersCount);
-  }
-
-  // Update polyface output data from router
-  update_output();
-
-  // Get input from router for hotkey checking
-  const input_event_t* event = router_get_output(OUTPUT_TARGET_NUON, 0);
-  if (!event) return;
-
-  // Check IGR hotkeys (internal Nuon reset mod)
-  hotkeys_check(event->buttons, 0);
-}
-
 //
-// core1_task - inner-loop for the second core
-void __not_in_flash_func(core1_task)(void)
+// core1_entry - inner-loop for the second core
+void __not_in_flash_func(core1_entry)(void)
 {
   uint64_t packet = 0;
   uint16_t state = 0;
@@ -281,8 +177,6 @@ void __not_in_flash_func(core1_task)(void)
     uint32_t word0 = 1;
     uint32_t word1 = 0;
 
-    pf_diag_count++;
-
     if (dataA == 0xb1 && dataS == 0x00 && dataC == 0x00) // RESET
     {
       id = 0;
@@ -292,7 +186,6 @@ void __not_in_flash_func(core1_task)(void)
       state = 0;
       channel = 0;
     }
-
     if (dataA == 0x80) // ALIVE
     {
       word0 = 1;
@@ -482,78 +375,123 @@ void __not_in_flash_func(core1_task)(void)
 //
 void __not_in_flash_func(update_output)(void)
 {
-  // Get input from router (Nuon uses MERGE mode, all inputs merged to player 0)
-  const input_event_t* event = router_get_output(OUTPUT_TARGET_NUON, 0);
-  if (!event || playersCount == 0) return;
+  // Calculate and set Nuon output packet values here.
+  int32_t buttons = (players[0].output_buttons & 0xffff) |
+                    (players[0].output_buttons_alt & 0xffff);
 
-  // Apply profile remapping
-  const profile_t* profile = profile_get_active(OUTPUT_TARGET_NUON);
-  profile_output_t mapped;
-  profile_apply(profile, event->buttons,
-                event->analog[ANALOG_LX], event->analog[ANALOG_LY],
-                event->analog[ANALOG_RX], event->analog[ANALOG_RY],
-                event->analog[ANALOG_L2], event->analog[ANALOG_R2],
-                event->analog[ANALOG_RZ],
-                &mapped);
+  output_buttons_0 = crc_data_packet(buttons, 2);
+  output_analog_1x = crc_data_packet(players[0].output_analog_1x, 1);
+  output_analog_1y = crc_data_packet(players[0].output_analog_1y, 1);
+  output_analog_2x = crc_data_packet(players[0].output_analog_2x, 1);
+  output_analog_2y = crc_data_packet(players[0].output_analog_2y, 1);
+  output_quad_x    = crc_data_packet(players[0].output_quad_x, 1);
 
-  // Map USBR buttons to Nuon button format
-  int32_t nuon_buttons = map_nuon_buttons(mapped.buttons);
+  codes_task();
 
-  output_buttons_0 = crc_data_packet(nuon_buttons, 2);
-  output_analog_1x = crc_data_packet(mapped.left_x, 1);
-  output_analog_1y = crc_data_packet(255 - mapped.left_y, 1);   // Invert Y: HID uses 0=up
-  output_analog_2x = crc_data_packet(mapped.right_x, 1);
-  output_analog_2y = crc_data_packet(255 - mapped.right_y, 1);  // Invert Y: HID uses 0=up
-
-  // TODO Phase 5: Re-implement spinner/mouse wheel support
-  // output_quad_x was accumulated in post_input_event() - need console-local accumulator
-  output_quad_x    = crc_data_packet(0, 1);  // Disabled for now
-
-  codes_task_for_output(OUTPUT_TARGET_NUON);
-
+  update_pending = true;
 }
 
-// post_input_event removed - replaced by router architecture
-// Input flow: USB drivers → router_submit_input() → router → router_get_output() → update_output()
 
-// ============================================================================
-// PROFILE SYSTEM (Delegates to core profile service)
-// ============================================================================
+//
+// post_globals - accumulate button and analog values
+//
+void __not_in_flash_func(post_globals)(
+  uint8_t dev_addr,
+  int8_t instance,
+  uint32_t buttons,
+  uint8_t analog_1x,
+  uint8_t analog_1y,
+  uint8_t analog_2x,
+  uint8_t analog_2y,
+  uint8_t analog_l,
+  uint8_t analog_r,
+  uint32_t keys,
+  uint8_t quad_x)
+{
+  bool has6Btn = !(buttons & 0x0800);
 
-static uint8_t nuon_get_profile_count(void) {
-    return profile_get_count(OUTPUT_TARGET_NUON);
+  // for merging extra device instances into the root instance (ex: joycon charging grip)
+  bool is_extra = (instance == -1);
+  if (is_extra) instance = 0;
+
+  int player_index = find_player_index(dev_addr, instance);
+  uint16_t buttons_pressed = (~(buttons | 0x0800)) || keys;
+  if (player_index < 0 && buttons_pressed)
+  {
+    printf("[add player] [%d, %d]\n", dev_addr, instance);
+    player_index = add_player(dev_addr, instance);
+  }
+
+  // printf("[player_index] [%d] [%d, %d]\n", player_index, dev_addr, instance);
+
+  if (player_index >= 0)
+  {
+    // extra instance buttons to merge with root player
+    if (is_extra)
+    {
+      players[0].altern_buttons = buttons;
+    }
+    else
+    {
+      players[player_index].global_buttons = buttons;
+    }
+
+    uint32_t nuon_buttons = map_nuon_buttons(buttons);
+    if (!instance)
+    {
+      players[player_index].output_buttons = nuon_buttons;
+    }
+    else
+    {
+      players[player_index].output_buttons_alt = nuon_buttons;
+    }
+
+    if (analog_1x) players[player_index].output_analog_1x = analog_1x;
+    if (analog_1y) players[player_index].output_analog_1y = analog_1y;
+    if (analog_2x) players[player_index].output_analog_2x = analog_2x;
+    if (analog_2y) players[player_index].output_analog_2y = analog_2y;
+    if (quad_x) players[player_index].output_quad_x = quad_x;
+    update_output();
+  }
 }
 
-static uint8_t nuon_get_active_profile(void) {
-    return profile_get_active_index(OUTPUT_TARGET_NUON);
+//
+// post_mouse_globals - accumulate the many intermediate mouse scans (~1ms)
+//
+void __not_in_flash_func(post_mouse_globals)(
+  uint8_t dev_addr,
+  int8_t instance,
+  uint16_t buttons,
+  uint8_t delta_x,
+  uint8_t delta_y,
+  uint8_t quad_x)
+{
+  // for merging extra device instances into the root instance (ex: joycon charging grip)
+  bool is_extra = (instance == -1);
+  if (is_extra) instance = 0;
+
+  int player_index = find_player_index(dev_addr, instance);
+  uint16_t buttons_pressed = (~(buttons | 0x0f00));
+  if (player_index < 0 && buttons_pressed)
+  {
+    printf("[add player] [%d, %d]\n", dev_addr, instance);
+    player_index = add_player(dev_addr, instance);
+  }
+
+  // printf("[player_index] [%d] [%d, %d]\n", player_index, dev_addr, instance);
+
+  if (player_index >= 0)
+  {
+    players[player_index].global_buttons = buttons;
+    players[player_index].output_buttons = map_nuon_buttons(players[player_index].global_buttons & players[player_index].altern_buttons);
+    players[player_index].output_analog_1x = 128;
+    players[player_index].output_analog_1y = 128;
+    players[player_index].output_analog_2x = 128;
+    players[player_index].output_analog_2y = 128;
+    players[player_index].output_analog_l = 0;
+    players[player_index].output_analog_r = 0;
+    if (quad_x) players[player_index].output_quad_x = quad_x;
+
+    update_output();
+  }
 }
-
-static void nuon_set_active_profile(uint8_t index) {
-    profile_set_active(OUTPUT_TARGET_NUON, index);
-}
-
-static const char* nuon_get_profile_name(uint8_t index) {
-    return profile_get_name(OUTPUT_TARGET_NUON, index);
-}
-
-// ============================================================================
-// OUTPUT INTERFACE
-// ============================================================================
-
-#include "core/output_interface.h"
-
-const OutputInterface nuon_output_interface = {
-    .name = "Nuon",
-    .target = OUTPUT_TARGET_NUON,
-    .init = nuon_init,
-    .core1_task = core1_task,
-    .task = nuon_task,  // Nuon needs periodic soft reset task
-    .get_rumble = NULL,
-    .get_player_led = NULL,
-    // Profile system
-    .get_profile_count = nuon_get_profile_count,
-    .get_active_profile = nuon_get_active_profile,
-    .set_active_profile = nuon_set_active_profile,
-    .get_profile_name = nuon_get_profile_name,
-    .get_trigger_threshold = NULL,
-};
