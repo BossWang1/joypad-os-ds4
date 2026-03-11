@@ -60,6 +60,7 @@ CONSOLE_pce := joypad_pce
 CONSOLE_ngc := joypad_ngc
 CONSOLE_ngc_rp2040zero := joypad_ngc_rp2040zero
 CONSOLE_nuon := joypad_nuon
+CONSOLE_nuonserial := joypad_nuonserial
 CONSOLE_loopy := joypad_loopy
 CONSOLE_dc := joypad_dc
 CONSOLE_dc_rp2040zero := joypad_dc_rp2040zero
@@ -72,6 +73,7 @@ CONSOLE_neogeo_rp2040zero := joypad_neogeo_rp2040zero
 CONSOLE_n642dc := joypad_n642dc
 CONSOLE_n642dc_pico2_w := joypad_n642dc_pico2_w
 CONSOLE_n642nuon := joypad_n642nuon
+CONSOLE_n642nuon_pico := joypad_n642nuon
 CONSOLE_n642nuon_aries64 := joypad_n642nuon_aries64
 CONSOLE_snes3do := joypad_snes3do
 CONSOLE_uart := joypad_uart
@@ -110,6 +112,7 @@ APP_usb2pce_kb2040 := kb2040 pce usb2pce_kb2040 USB/BT PCEngine
 APP_usb2gc_kb2040 := kb2040 ngc usb2gc_kb2040 USB/BT GameCube
 APP_usb2gc_rp2040zero := rp2040zero ngc_rp2040zero usb2gc_rp2040zero USB/BT GameCube
 APP_usb2nuon_kb2040 := kb2040 nuon usb2nuon_kb2040 USB/BT Nuon
+APP_nuonserial_kb2040 := kb2040 nuonserial nuonserial_kb2040 Nuon CDC-Serial
 APP_usb2loopy_kb2040 := kb2040 loopy usb2loopy_kb2040 USB/BT Loopy
 APP_usb2dc_kb2040 := kb2040 dc usb2dc_kb2040 USB/BT Dreamcast
 APP_usb2dc_rp2040zero := rp2040zero dc_rp2040zero usb2dc_rp2040zero USB/BT Dreamcast
@@ -120,7 +123,7 @@ APP_n642dc_kb2040 := kb2040 n642dc n642dc_kb2040 N64 Dreamcast
 APP_n642dc_pico2_w := pico2_w n642dc_pico2_w n642dc_pico2_w N64 Dreamcast
 APP_nes2usb_kb2040 := kb2040 nes2usb nes2usb_kb2040 NES USB
 APP_nes2usb_pico_w := pico_w nes2usb nes2usb_pico_w NES USB
-APP_n642nuon_kb2040 := kb2040 n642nuon n642nuon_kb2040 N64 Nuon
+APP_n642nuon_pico := pico n642nuon n642nuon_pico N64 Nuon
 APP_n642nuon_aries64 := pico n642nuon_aries64 n642nuon_aries64 N64 Nuon
 APP_usb23do_rp2040zero := rp2040zero 3do usb23do_rp2040zero USB/BT 3DO
 APP_snes23do_rp2040zero := rp2040zero snes3do snes23do_rp2040zero SNES 3DO
@@ -166,7 +169,7 @@ APP_controller_btusb_feather_rp2040 := feather controller_btusb_feather_rp2040 c
 
 # All apps (note: controller_macropad not included - build explicitly with 'make controller_macropad')
 # Note: usb2loopy_kb2040, snes23do_rp2040zero excluded until more mature
-APPS := usb2pce_kb2040 usb2gc_kb2040 usb2gc_rp2040zero usb2nuon_kb2040 usb2n64_kb2040 usb2dc_kb2040 usb2dc_rp2040zero usb2neogeo_kb2040 usb2neogeo_pico usb2neogeo_rp2040zero n642dc_kb2040 n642dc_pico2_w n642nuon_kb2040 usb23do_rp2040zero usb2uart_kb2040 usb2usb_pico usb2usb_pico_w usb2usb_pico2_w usb2usb_feather_rp2040 usb2usb_feather_rp2040_usb_host usb2usb_feather_rp2040_max3421 usb2usb_feather_rp2040_usb_host_max3421 usb2usb_rp2040zero usb2usb_rp2350usba bt2usb_pico_w bt2usb_pico2_w btusb2usb_pico_w btusb2usb_pico2_w usb2ble_pico_w usb2ble_pico2_w bt2nuon_pico_w bt2nuon_pico2_w bt2n64_pico_w bt2n64_pico2_w snes2usb_kb2040 n642usb_kb2040 gc2usb_kb2040 nes2usb_kb2040 nes2usb_pico_w controller_fisherprice_kb2040 controller_alpakka_pico
+APPS := usb2pce_kb2040 usb2gc_kb2040 usb2gc_rp2040zero usb2nuon_kb2040 usb2n64_kb2040 usb2dc_kb2040 usb2dc_rp2040zero usb2neogeo_kb2040 usb2neogeo_pico usb2neogeo_rp2040zero n642dc_kb2040 n642dc_pico2_w n642nuon_pico usb23do_rp2040zero usb2uart_kb2040 usb2usb_pico usb2usb_pico_w usb2usb_pico2_w usb2usb_feather_rp2040 usb2usb_feather_rp2040_usb_host usb2usb_feather_rp2040_max3421 usb2usb_feather_rp2040_usb_host_max3421 usb2usb_rp2040zero usb2usb_rp2350usba bt2usb_pico_w bt2usb_pico2_w btusb2usb_pico_w btusb2usb_pico2_w usb2ble_pico_w usb2ble_pico2_w bt2nuon_pico_w bt2nuon_pico2_w bt2n64_pico_w bt2n64_pico2_w snes2usb_kb2040 n642usb_kb2040 gc2usb_kb2040 nes2usb_kb2040 nes2usb_pico_w controller_fisherprice_kb2040 controller_alpakka_pico
 
 # Stable apps for release
 # Note: usb2loopy_kb2040, snes23do_rp2040zero excluded until more mature
@@ -218,7 +221,7 @@ help:
 	@echo "  make usb2neogeo_rp2040zero - USB/BT -> NEOGEO (RP2040-Zero)"
 	@echo "  make n642dc_kb2040      - N64 -> Dreamcast (KB2040)"
 	@echo "  make n642dc_pico2_w     - N64 -> Dreamcast (Pi Pico 2 W)"
-	@echo "  make n642nuon_kb2040    - N64 -> Nuon (KB2040)"
+	@echo "  make n642nuon_pico    - N64 -> Nuon (KB2040)"
 	@echo "  make usb23do_rp2040zero - USB/BT -> 3DO (RP2040-Zero)"
 	@echo "  make snes23do_rp2040zero - SNES -> 3DO (RP2040-Zero)"
 	@echo "  make usb2uart_kb2040    - USB -> UART/ESP32 (KB2040)"
@@ -372,6 +375,10 @@ usb2gc_rp2040zero:
 usb2nuon_kb2040:
 	$(call build_app,usb2nuon_kb2040)
 
+.PHONY: nuonserial_kb2040
+nuonserial_kb2040:
+	$(call build_app,nuonserial_kb2040)
+
 .PHONY: usb2n64_kb2040
 usb2n64_kb2040:
 	$(call build_app,usb2n64_kb2040)
@@ -408,9 +415,9 @@ n642dc_kb2040:
 n642dc_pico2_w:
 	$(call build_app,n642dc_pico2_w)
 
-.PHONY: n642nuon_kb2040
-n642nuon_kb2040:
-	$(call build_app,n642nuon_kb2040)
+.PHONY: n642nuon_pico
+n642nuon_pico:
+	$(call build_app,n642nuon_pico)
 
 .PHONY: n642nuon_aries64
 n642nuon_aries64:
@@ -982,6 +989,10 @@ flash-usb2neogeo_rp2040zero:
 flash-usb2nuon_kb2040:
 	@$(MAKE) --no-print-directory _flash_app APP_NAME=usb2nuon_kb2040
 
+.PHONY: flash-nuonserial_kb2040
+flash-nuonserial_kb2040:
+	@$(MAKE) --no-print-directory _flash_app APP_NAME=nuonserial_kb2040
+
 .PHONY: flash-usb2loopy_kb2040
 flash-usb2loopy_kb2040:
 	@$(MAKE) --no-print-directory _flash_app APP_NAME=usb2loopy_kb2040
@@ -1002,9 +1013,9 @@ flash-n642dc_kb2040:
 flash-n642dc_pico2_w:
 	@$(MAKE) --no-print-directory _flash_app APP_NAME=n642dc_pico2_w
 
-.PHONY: flash-n642nuon_kb2040
-flash-n642nuon_kb2040:
-	@$(MAKE) --no-print-directory _flash_app APP_NAME=n642nuon_kb2040
+.PHONY: flash-n642nuon_pico
+flash-n642nuon_pico:
+	@$(MAKE) --no-print-directory _flash_app APP_NAME=n642nuon_pico
 
 .PHONY: flash-n642nuon_aries64
 flash-n642nuon_aries64:
