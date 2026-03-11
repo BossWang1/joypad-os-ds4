@@ -36,6 +36,7 @@
 // ============================================================================
 
 static cdc_protocol_t protocol_ctx;
+static cdc_protocol_t *active_ctx = &protocol_ctx;  // Swappable for NUS bridge
 static char response_buf[CDC_MAX_PAYLOAD];
 
 // Deferred reboot flags — set by command handlers, executed in cdc_commands_task()
@@ -201,19 +202,19 @@ static bool json_get_cmd(const char* json, char* cmd_buf, size_t buf_size)
 
 static void send_ok(void)
 {
-    cdc_protocol_send_response(&protocol_ctx, "{\"ok\":true}");
+    cdc_protocol_send_response(active_ctx, "{\"ok\":true}");
 }
 
 static void send_error(const char* msg)
 {
     snprintf(response_buf, sizeof(response_buf),
              "{\"ok\":false,\"error\":\"%s\"}", msg);
-    cdc_protocol_send_response(&protocol_ctx, response_buf);
+    cdc_protocol_send_response(active_ctx, response_buf);
 }
 
 static void send_json(const char* json)
 {
-    cdc_protocol_send_response(&protocol_ctx, json);
+    cdc_protocol_send_response(active_ctx, json);
 }
 
 // ============================================================================
@@ -1463,6 +1464,11 @@ void cdc_commands_process(const cdc_packet_t* packet)
 cdc_protocol_t* cdc_commands_get_protocol(void)
 {
     return &protocol_ctx;
+}
+
+void cdc_commands_set_active_protocol(cdc_protocol_t* ctx)
+{
+    active_ctx = ctx ? ctx : &protocol_ctx;
 }
 
 void cdc_commands_send_input_event(uint32_t buttons, const uint8_t* axes)

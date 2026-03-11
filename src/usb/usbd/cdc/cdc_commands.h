@@ -24,6 +24,10 @@ void cdc_commands_process(const cdc_packet_t* packet);
 // Get protocol context (for sending events)
 cdc_protocol_t* cdc_commands_get_protocol(void);
 
+// Set active protocol context for command responses (used by NUS bridge).
+// Pass NULL to restore the default USB CDC context.
+void cdc_commands_set_active_protocol(cdc_protocol_t* ctx);
+
 // Send input event (if streaming enabled) - raw input before profile mapping
 void cdc_commands_send_input_event(uint32_t buttons, const uint8_t* axes);
 

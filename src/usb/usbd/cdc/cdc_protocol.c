@@ -174,7 +174,10 @@ uint16_t cdc_protocol_send(cdc_protocol_t* ctx, cdc_msg_type_t type,
     packet[pos++] = crc & 0xFF;
     packet[pos++] = (crc >> 8) & 0xFF;
 
-    // Send via CDC data port
+    // Send via transport (custom write function or USB CDC default)
+    if (ctx->write) {
+        return ctx->write(packet, pos);
+    }
     return cdc_data_write(packet, pos);
 }
 

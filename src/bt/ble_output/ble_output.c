@@ -11,6 +11,7 @@
 #include "ble_output_keyboard.h"
 #include "ble_output_mouse.h"
 #include "ble_output_xbox.h"
+#include "ble_nus.h"
 #include "ble_gamepad.h"  // Generated from ble_gamepad.gatt by compile_gatt.py
 
 // Xbox GATT database (compiled from ble_xbox.gatt, wrapped in ble_xbox_gatt_db.c)
@@ -605,6 +606,12 @@ void ble_output_late_init(void)
     sm_add_event_handler(&sm_event_callback_registration);
 
     hids_device_register_packet_handler(packet_handler);
+
+    // Initialize NUS (Nordic UART Service) for wireless config — standard mode only
+    // (Xbox mode uses a different GATT profile without NUS)
+    if (current_mode == BLE_MODE_STANDARD) {
+        ble_nus_init();
+    }
 
     printf("[ble_output] BLE advertising as '%s'\n", gap_name);
 }
