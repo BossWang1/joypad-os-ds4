@@ -23,12 +23,22 @@
 #ifdef BTSTACK_USE_ESP32
 #include "driver/gpio.h"
 extern const bt_transport_t bt_transport_esp32;
-// Status LED GPIO (Seeed XIAO ESP32-S3 = GPIO 21, active low)
+// Status LED GPIO — board-specific defaults
+// Feather ESP32-S3: GPIO 13 (red LED, active high). GPIO 21 is NeoPixel power!
+// Seeed XIAO ESP32-S3: GPIO 21 (active low)
 #ifndef STATUS_LED_GPIO
-#define STATUS_LED_GPIO 21
+  #ifdef BOARD_FEATHER_ESP32S3
+    #define STATUS_LED_GPIO 13
+  #else
+    #define STATUS_LED_GPIO 21
+  #endif
 #endif
 #ifndef STATUS_LED_ACTIVE_LOW
-#define STATUS_LED_ACTIVE_LOW 1
+  #ifdef BOARD_FEATHER_ESP32S3
+    #define STATUS_LED_ACTIVE_LOW 0
+  #else
+    #define STATUS_LED_ACTIVE_LOW 1
+  #endif
 #endif
 #elif defined(BTSTACK_USE_NRF)
 extern const bt_transport_t bt_transport_nrf;
