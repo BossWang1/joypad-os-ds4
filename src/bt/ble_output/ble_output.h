@@ -13,6 +13,7 @@
 extern const OutputInterface ble_output_interface;
 
 void ble_output_init(void);
+void ble_output_late_init(void);
 void ble_output_task(void);
 
 #endif // BLE_OUTPUT_H

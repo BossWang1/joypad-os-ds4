@@ -18,6 +18,9 @@
 #include "core/buttons.h"
 
 #include "pico/cyw43_arch.h"
+#include "gap.h"
+#include "ble/sm.h"
+#include "ble/le_device_db.h"
 extern const bt_transport_t bt_transport_cyw43;
 
 #include "tusb.h"
@@ -61,7 +64,13 @@ static void on_button_event(button_event_t event)
             break;
 
         case BUTTON_EVENT_HOLD:
-            printf("[app:usb2ble] Long press - future: clear BLE bonds\n");
+            printf("[app:usb2ble] Long press - clearing BLE bonds\n");
+            gap_delete_all_link_keys();
+            for (int i = 0; i < le_device_db_max_count(); i++) {
+                le_device_db_remove(i);
+            }
+            printf("[app:usb2ble] Bonds cleared, restarting advertising\n");
+            gap_advertisements_enable(1);
             break;
 
         default:
@@ -137,6 +146,9 @@ void app_init(void)
     // PIO-USB uses PIO0 and a high DMA channel (10) to avoid conflicts.
     printf("[app:usb2ble] Initializing CYW43 Bluetooth...\n");
     bt_init(&bt_transport_cyw43);
+
+    // BTstack is now running — initialize GATT/GAP services
+    ble_output_late_init();
 
     printf("[app:usb2ble] Initialization complete\n");
     printf("[app:usb2ble]   Routing: USB Host → BLE Peripheral (Gamepad)\n");

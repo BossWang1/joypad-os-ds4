@@ -39,21 +39,25 @@ static const uint8_t ble_hid_descriptor[] = {
     0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
     0x09, 0x05,        // Usage (Game Pad)
     0xA1, 0x01,        // Collection (Application)
+    0x85, 0x01,        //   Report ID (1) — must match hids.gatt REPORT_REFERENCE
 
-    // 16 buttons (2 bytes)
+    // 14 buttons (B1-R3 + A1 + A2) + 2 padding bits = 2 bytes
     0x15, 0x00,        //   Logical Minimum (0)
     0x25, 0x01,        //   Logical Maximum (1)
     0x35, 0x00,        //   Physical Minimum (0)
     0x45, 0x01,        //   Physical Maximum (1)
     0x75, 0x01,        //   Report Size (1)
-    0x95, 0x10,        //   Report Count (16)
+    0x95, 0x0E,        //   Report Count (14)
     0x05, 0x09,        //   Usage Page (Button)
     0x19, 0x01,        //   Usage Minimum (Button 1)
-    0x29, 0x10,        //   Usage Maximum (Button 16)
+    0x29, 0x0E,        //   Usage Maximum (Button 14)
     0x81, 0x02,        //   Input (Data,Var,Abs)
+    0x95, 0x02,        //   Report Count (2)
+    0x81, 0x01,        //   Input (Const) - 2 bit padding
 
     // Hat switch (4 bits + 4 bit padding)
     0x05, 0x01,        //   Usage Page (Generic Desktop Ctrls)
+    0x15, 0x00,        //   Logical Minimum (0)
     0x25, 0x07,        //   Logical Maximum (7)
     0x46, 0x3B, 0x01,  //   Physical Maximum (315)
     0x75, 0x04,        //   Report Size (4)
@@ -63,7 +67,7 @@ static const uint8_t ble_hid_descriptor[] = {
     0x81, 0x42,        //   Input (Data,Var,Abs,Null)
     0x65, 0x00,        //   Unit (None)
     0x95, 0x01,        //   Report Count (1)
-    0x81, 0x01,        //   Input (Const,Ary,Abs) - 4 bit padding
+    0x81, 0x01,        //   Input (Const) - 4 bit padding
 
     // 6 axes: X, Y, Z, Rz (sticks), Rx, Ry (triggers)
     0x26, 0xFF, 0x00,  //   Logical Maximum (255)
@@ -146,26 +150,26 @@ static const uint8_t adv_data[] = {
 
 // Convert Joypad buttons to BLE gamepad 16-bit button field
 // Maps directly: bit 0 = B1 (Cross/A), bit 1 = B2 (Circle/B), etc.
+// 14 buttons: B1-B4, L1-R2, S1-S2, L3-R3, A1, A2
+// D-pad is hat switch only (not duplicated in button bits)
 static uint16_t convert_buttons(uint32_t buttons)
 {
     uint16_t ble_buttons = 0;
 
-    if (buttons & JP_BUTTON_B1) ble_buttons |= (1 << 0);
-    if (buttons & JP_BUTTON_B2) ble_buttons |= (1 << 1);
-    if (buttons & JP_BUTTON_B3) ble_buttons |= (1 << 2);
-    if (buttons & JP_BUTTON_B4) ble_buttons |= (1 << 3);
-    if (buttons & JP_BUTTON_L1) ble_buttons |= (1 << 4);
-    if (buttons & JP_BUTTON_R1) ble_buttons |= (1 << 5);
-    if (buttons & JP_BUTTON_L2) ble_buttons |= (1 << 6);
-    if (buttons & JP_BUTTON_R2) ble_buttons |= (1 << 7);
-    if (buttons & JP_BUTTON_S1) ble_buttons |= (1 << 8);
-    if (buttons & JP_BUTTON_S2) ble_buttons |= (1 << 9);
-    if (buttons & JP_BUTTON_L3) ble_buttons |= (1 << 10);
-    if (buttons & JP_BUTTON_R3) ble_buttons |= (1 << 11);
-    if (buttons & JP_BUTTON_A1) ble_buttons |= (1 << 12);
-    if (buttons & JP_BUTTON_A2) ble_buttons |= (1 << 13);
-    if (buttons & JP_BUTTON_DU) ble_buttons |= (1 << 14);
-    if (buttons & JP_BUTTON_DD) ble_buttons |= (1 << 15);
+    if (buttons & JP_BUTTON_B1) ble_buttons |= (1 << 0);   // Button 1: Cross/A
+    if (buttons & JP_BUTTON_B2) ble_buttons |= (1 << 1);   // Button 2: Circle/B
+    if (buttons & JP_BUTTON_B3) ble_buttons |= (1 << 2);   // Button 3: Square/X
+    if (buttons & JP_BUTTON_B4) ble_buttons |= (1 << 3);   // Button 4: Triangle/Y
+    if (buttons & JP_BUTTON_L1) ble_buttons |= (1 << 4);   // Button 5: L1/LB
+    if (buttons & JP_BUTTON_R1) ble_buttons |= (1 << 5);   // Button 6: R1/RB
+    if (buttons & JP_BUTTON_L2) ble_buttons |= (1 << 6);   // Button 7: L2/LT
+    if (buttons & JP_BUTTON_R2) ble_buttons |= (1 << 7);   // Button 8: R2/RT
+    if (buttons & JP_BUTTON_S1) ble_buttons |= (1 << 8);   // Button 9: Select/Back
+    if (buttons & JP_BUTTON_S2) ble_buttons |= (1 << 9);   // Button 10: Start
+    if (buttons & JP_BUTTON_L3) ble_buttons |= (1 << 10);  // Button 11: L3
+    if (buttons & JP_BUTTON_R3) ble_buttons |= (1 << 11);  // Button 12: R3
+    if (buttons & JP_BUTTON_A1) ble_buttons |= (1 << 12);  // Button 13: Guide/Home
+    if (buttons & JP_BUTTON_A2) ble_buttons |= (1 << 13);  // Button 14: Misc
 
     return ble_buttons;
 }
@@ -228,8 +232,14 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
                 case HIDS_SUBEVENT_CAN_SEND_NOW:
                     if (report_pending && con_handle != HCI_CON_HANDLE_INVALID) {
+                        const uint8_t *rpt = (const uint8_t *)&pending_report;
+                        printf("[ble_output] TX:");
+                        for (uint8_t i = 0; i < sizeof(pending_report); i++) {
+                            printf(" %02x", rpt[i]);
+                        }
+                        printf("\n");
                         hids_device_send_input_report(con_handle,
-                            (const uint8_t *)&pending_report, sizeof(pending_report));
+                            rpt, sizeof(pending_report));
                         last_sent_report = pending_report;
                         report_pending = false;
                     }
@@ -251,7 +261,22 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
 void ble_output_init(void)
 {
-    printf("[ble_output] Initializing BLE Gamepad output\n");
+    printf("[ble_output] Initializing BLE Gamepad output (early)\n");
+
+    // Initialize report to neutral state (no BTstack dependency)
+    memset(&pending_report, 0, sizeof(pending_report));
+    pending_report.hat = BLE_HAT_CENTER;
+    pending_report.lx = 128;
+    pending_report.ly = 128;
+    pending_report.rx = 128;
+    pending_report.ry = 128;
+    last_sent_report = pending_report;
+}
+
+// Called after bt_init() — BTstack must be running before GATT/GAP setup
+void ble_output_late_init(void)
+{
+    printf("[ble_output] Setting up BLE GATT services\n");
 
     // Setup ATT server with compiled GATT profile
     att_server_init(profile_data, NULL, NULL);
@@ -259,6 +284,11 @@ void ble_output_init(void)
     // Setup GATT services
     battery_service_server_init(100);
     device_information_service_server_init();
+    device_information_service_server_set_manufacturer_name("Joypad");
+    device_information_service_server_set_model_number("USB2BLE");
+    device_information_service_server_set_software_revision("1.0.0");
+    // PnP ID: USB IF (0x02), VID 0x2e8a, PID 0x10c6, version 1.0.0
+    device_information_service_server_set_pnp_id(0x02, 0x2e8a, 0x10c6, 0x0100);
 
     // Setup HID Device service
     hids_device_init(0, ble_hid_descriptor, sizeof(ble_hid_descriptor));
@@ -285,15 +315,6 @@ void ble_output_init(void)
 
     hids_device_register_packet_handler(packet_handler);
 
-    // Initialize report to neutral state
-    memset(&pending_report, 0, sizeof(pending_report));
-    pending_report.hat = BLE_HAT_CENTER;
-    pending_report.lx = 128;
-    pending_report.ly = 128;
-    pending_report.rx = 128;
-    pending_report.ry = 128;
-    last_sent_report = pending_report;
-
     printf("[ble_output] BLE Gamepad advertising as 'Joypad Gamepad'\n");
 }
 
@@ -317,6 +338,15 @@ void ble_output_task(void)
     report.ry = event->analog[ANALOG_RY];
     report.lt = event->analog[ANALOG_L2];
     report.rt = event->analog[ANALOG_R2];
+
+    static uint32_t dbg_count = 0;
+    if (dbg_count++ < 5) {
+        printf("[ble_output] buttons=0x%08lx lx=%d ly=%d rx=%d ry=%d lt=%d rt=%d\n",
+            (unsigned long)event->buttons,
+            event->analog[ANALOG_LX], event->analog[ANALOG_LY],
+            event->analog[ANALOG_RX], event->analog[ANALOG_RY],
+            event->analog[ANALOG_L2], event->analog[ANALOG_R2]);
+    }
 
     // Only send if report changed (avoid flooding BLE link)
     if (memcmp(&report, &last_sent_report, sizeof(report)) == 0) return;
