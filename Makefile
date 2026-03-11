@@ -502,6 +502,34 @@ flash-bt2usb_esp32s3:
 monitor-bt2usb_esp32s3:
 	@cd esp && $(MAKE) monitor
 
+# --- ESP32-S3 bt2usb on Feather ESP32-S3 (requires ESP-IDF) ---
+.PHONY: bt2usb_feather_esp32s3
+bt2usb_feather_esp32s3:
+	@echo "$(YELLOW)Building bt2usb for Feather ESP32-S3...$(NC)"
+	@cd esp && $(MAKE) build BOARD=feather_esp32s3
+	@echo "$(GREEN)✓ bt2usb_feather_esp32s3 built successfully$(NC)"
+	@echo ""
+
+.PHONY: uf2-bt2usb_feather_esp32s3
+uf2-bt2usb_feather_esp32s3:
+	@echo "$(YELLOW)Building bt2usb UF2 for Feather ESP32-S3...$(NC)"
+	@cd esp && $(MAKE) uf2 BOARD=feather_esp32s3
+	@mkdir -p $(RELEASE_DIR)
+	@cp esp/build/joypad_bt2usb.uf2 \
+	    $(RELEASE_DIR)/joypad_$(VERSION_ID)_bt2usb_feather_esp32s3.uf2
+	@echo "$(GREEN)✓ UF2 built: $(RELEASE_DIR)/joypad_$(VERSION_ID)_bt2usb_feather_esp32s3.uf2$(NC)"
+	@echo ""
+
+.PHONY: flash-bt2usb_feather_esp32s3
+flash-bt2usb_feather_esp32s3:
+	@echo "$(YELLOW)Flashing bt2usb to Feather ESP32-S3...$(NC)"
+	@cd esp && $(MAKE) flash BOARD=feather_esp32s3
+	@echo "$(GREEN)✓ bt2usb_feather_esp32s3 flashed successfully$(NC)"
+	@echo ""
+
+.PHONY: monitor-bt2usb_feather_esp32s3
+monitor-bt2usb_feather_esp32s3:
+	@cd esp && $(MAKE) monitor
 
 # --- ESP32-S3 controller_btusb (requires ESP-IDF) ---
 .PHONY: controller_btusb_feather_esp32s3

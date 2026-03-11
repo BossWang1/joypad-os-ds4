@@ -11,8 +11,8 @@ CONFIG_APP ?= bt2usb
 # Auto-source ESP-IDF environment
 IDF_ENV := . ./env.sh >/dev/null 2>&1 &&
 
-# Pass CONFIG_APP to CMake
-CMAKE_EXTRA_ARGS := -DCONFIG_APP=$(CONFIG_APP)
+# Pass CONFIG_APP and BOARD to CMake
+CMAKE_EXTRA_ARGS := -DCONFIG_APP=$(CONFIG_APP) -DCONFIG_BOARD=$(BOARD)
 
 # Board configurations
 COMMON_SDKCONFIG := sdkconfig.defaults

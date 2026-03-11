@@ -328,6 +328,14 @@ target_compile_definitions(${COMPONENT_LIB} PUBLIC
     CFG_TUSB_CONFIG_FILE="tusb_config_esp32.h"
 )
 
+# Board-specific definitions
+if(NOT DEFINED CONFIG_BOARD)
+    set(CONFIG_BOARD "devkit")
+endif()
+if(CONFIG_BOARD STREQUAL "feather_esp32s3")
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC BOARD_FEATHER_ESP32S3=1)
+endif()
+
 # App-specific definitions
 if(CONFIG_APP STREQUAL "controller_btusb")
     target_compile_definitions(${COMPONENT_LIB} PUBLIC
@@ -335,7 +343,6 @@ if(CONFIG_APP STREQUAL "controller_btusb")
         BTSTACK_USE_ESP32=1
         ENABLE_BTSTACK=1
         SENSOR_JOYWING=1
-        BOARD_FEATHER_ESP32S3=1
         USBD_DEFAULT_MODE=1
     )
 elseif(APP_NEEDS_BTSTACK)
