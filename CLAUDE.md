@@ -144,6 +144,7 @@ src/
 │       ├── jocp_input.c        # Packet parsing/conversion
 │       ├── wifi_transport.c/h  # WiFi AP, UDP/TCP servers
 │       └── dhcpserver.c/h      # DHCP server
+├── pad/                        # GPIO controller input (custom controller builds)
 └── native/
     ├── device/                 # Console outputs (we emulate devices)
     │   ├── pcengine/           # PCEngine multitap (PIO)
@@ -270,6 +271,14 @@ W3C Gamepad API order - bit position = button index:
 
 - **Core 0**: USB/BT polling, input processing, main loop
 - **Core 1**: Console output protocol (timing-critical PIO)
+- On **Pico 2 W (RP2350)**: Core 0's CYW43 driver periodically locks flash — Core 1 functions must be RAM-only (`__not_in_flash_func` or fully inlined)
+
+### PIO Resource Conflicts
+
+- **CYW43** (Pico W/2W) uses PIO1 — assign console protocols to PIO0
+- **PIO-USB** (USB host) uses PIO0 — conflicts with CYW43 which needs PIO1
+- **NeoPixel** always claims PIO0 SM0 — can conflict with PIO-USB
+- Each PIO block has 32 instruction slots shared across all programs loaded into it
 
 ### PIO State Machines
 
@@ -291,9 +300,13 @@ Console protocols use RP2040 PIO for precise timing:
    - `app.h` - Version, config constants
    - `profiles.h` - Button mapping profiles (optional)
 
-2. Add to `CMakeLists.txt` and `Makefile`
+2. Add CMake target in `src/CMakeLists.txt`
 
-3. Build: `make <appname>`
+3. Add Make targets in `Makefile` and to the `APPS` list for `make all`
+
+4. Add to `.github/workflows/build.yml` for CI
+
+5. Build: `make <appname>`
 
 ### Adding a New USB Device Driver
 
@@ -391,6 +404,9 @@ Key differences from RP2040:
 - **nRF Classic BT guards** - Same Classic-only APIs must be guarded with `#ifndef BTSTACK_USE_NRF`
 - **nRF BTstack threading** - All BTstack API calls must happen in the BTstack Zephyr thread, not the main thread
 - **nRF Zephyr USB disabled** - `CONFIG_USB_DEVICE_STACK=n` and `&usbd { status = "disabled"; }` required so TinyUSB can own the USB peripheral
+- **Digital-only triggers** - Controllers without analog triggers synthesize analog values in `profile_apply()` so threshold logic works uniformly; don't special-case digital triggers in output drivers
+- **BLE HCI handle 0x0000 is valid** - Use `HCI_CON_HANDLE_INVALID` (0xFFFF) as the "no connection" sentinel, never 0
+- **BTstack custom run loops** - Must implement `execute_on_main_thread`; omitting it silently breaks cross-thread BTstack API calls
 
 ## External Dependencies
 

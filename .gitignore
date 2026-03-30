@@ -12,6 +12,14 @@ node_modules/
 .env
 site/
 esp/build/
+src/build*
 esp/sdkconfig
 esp/dependencies.lock
 esp/.cache/
+esp/build/
+src/build/
+serial.txt
+sig.bin
+key.pem
+src/lib
+plans/.agents/
