@@ -22,4 +22,6 @@ serial.txt
 sig.bin
 key.pem
 src/lib
-plans/.agents/
+
+plans/
+.agents/
