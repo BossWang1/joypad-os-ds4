@@ -42,6 +42,9 @@ endif
 # Use external TinyUSB (keeps pico-sdk clean)
 export PICO_TINYUSB_PATH := $(CURDIR)/src/lib/tinyusb
 
+# Cache picotool outside build dir so rm -rf build doesn't re-trigger download
+export PICOTOOL_FETCH_FROM_GIT_PATH := $(HOME)/.picotool
+
 # Board-specific build scripts
 BOARD_SCRIPT_pico := boards/build_rpi_pico.sh
 BOARD_SCRIPT_pico_w := boards/build_pico_w.sh

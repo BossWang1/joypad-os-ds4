@@ -13,6 +13,10 @@
 #include "usb/usbh/hid/devices/vendors/sony/sony_ds4.h"
 #endif
 
+#ifdef ENABLE_PS4_LOCAL_AUTH
+#include "ps4_local_auth.h"
+#endif
+
 // ============================================================================
 // STATE
 // ============================================================================
@@ -22,6 +26,7 @@ static uint8_t ps4_report_buffer[64];
 static ps4_out_report_t ps4_output;
 static bool ps4_output_available = false;
 static uint8_t ps4_report_counter = 0;
+
 
 // ============================================================================
 // MODE INTERFACE IMPLEMENTATION
@@ -192,10 +197,14 @@ static uint16_t ps4_mode_get_report(uint8_t report_id, hid_report_type_t report_
             memcpy(buffer, ps4_feature_03, len);
             return len;
 
-        case PS4_REPORT_ID_AUTH_RESPONSE:   // 0xF1 - Signature from DS4
-            // Get next signature page from DS4 passthrough (auto-incrementing)
+        case PS4_REPORT_ID_AUTH_RESPONSE:   // 0xF1 - Signature
             len = 64;
             if (reqlen < len) len = reqlen;
+#ifdef ENABLE_PS4_LOCAL_AUTH
+            if (ps4_local_auth_is_available()) {
+                return ps4_local_auth_get_next_page(buffer, len);
+            }
+#endif
 #ifndef DISABLE_USB_HOST
             if (ds4_auth_is_available()) {
                 return ds4_auth_get_next_signature(buffer, len);
@@ -205,17 +214,21 @@ static uint16_t ps4_mode_get_report(uint8_t report_id, hid_report_type_t report_
             return len;
 
         case PS4_REPORT_ID_AUTH_STATUS:     // 0xF2 - Signing status
-            // Get auth status from DS4 passthrough
             len = 16;
             if (reqlen < len) len = reqlen;
+#ifdef ENABLE_PS4_LOCAL_AUTH
+            if (ps4_local_auth_is_available()) {
+                return ps4_local_auth_get_status_report(buffer, len);
+            }
+#endif
 #ifndef DISABLE_USB_HOST
             if (ds4_auth_is_available()) {
                 return ds4_auth_get_status(buffer, len);
             }
 #endif
-            // Return "signing" status if no DS4 available
+            // No auth available — return "still signing" indefinitely
             memset(buffer, 0, len);
-            buffer[1] = 0x10;  // 16 = signing/not ready
+            buffer[1] = 0x10;
             return len;
 
         case PS4_REPORT_ID_AUTH_PAYLOAD:    // 0xF0 - handled in set_report
@@ -225,9 +238,12 @@ static uint16_t ps4_mode_get_report(uint8_t report_id, hid_report_type_t report_
             return len;
 
         case PS4_REPORT_ID_AUTH_RESET:      // 0xF3 - Return page size info
+#ifdef ENABLE_PS4_LOCAL_AUTH
+            if (ps4_local_auth_is_available()) {
+                ps4_local_auth_reset();
+            }
+#endif
 #ifndef DISABLE_USB_HOST
-            // Reset auth state when console requests 0xF3 (per hid-remapper)
-            // This ensures signature_ready is false for new auth cycle
             ds4_auth_reset();
 #endif
             len = sizeof(ps4_feature_f3);
@@ -244,26 +260,44 @@ static uint16_t ps4_mode_get_report(uint8_t report_id, hid_report_type_t report_
 // This is called from usbd.c's tud_hid_set_report_cb for feature reports
 void ps4_mode_set_feature_report(uint8_t report_id, const uint8_t* buffer, uint16_t bufsize)
 {
-#ifndef DISABLE_USB_HOST
     switch (report_id) {
         case PS4_REPORT_ID_AUTH_PAYLOAD:    // 0xF0 - Nonce from console
-            // Forward nonce to connected DS4
+#ifdef ENABLE_PS4_LOCAL_AUTH
+            if (ps4_local_auth_is_available()) {
+                ps4_local_auth_send_nonce_page(buffer, bufsize);
+                break;
+            }
+#endif
+#ifndef DISABLE_USB_HOST
             if (ds4_auth_is_available()) {
                 ds4_auth_send_nonce(buffer, bufsize);
             }
+#endif
             break;
 
         case PS4_REPORT_ID_AUTH_RESET:      // 0xF3 - Reset auth
+#ifdef ENABLE_PS4_LOCAL_AUTH
+            if (ps4_local_auth_is_available()) {
+                ps4_local_auth_reset();
+            }
+#endif
+#ifndef DISABLE_USB_HOST
             ds4_auth_reset();
+#endif
             break;
 
         default:
+            (void)buffer;
+            (void)bufsize;
             break;
     }
-#else
-    (void)report_id;
-    (void)buffer;
-    (void)bufsize;
+}
+
+// Called from the main loop (via usbd_mode_t.task) when PS4 mode is active
+static void ps4_mode_task(void)
+{
+#ifdef ENABLE_PS4_LOCAL_AUTH
+    ps4_local_auth_task();
 #endif
 }
 
@@ -303,5 +337,5 @@ const usbd_mode_t ps4_mode = {
     .get_feedback = ps4_mode_get_feedback,
     .get_report = ps4_mode_get_report,
     .get_class_driver = NULL,
-    .task = NULL,
+    .task = ps4_mode_task,
 };

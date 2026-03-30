@@ -294,6 +294,10 @@ static const uint8_t ps4_report_descriptor[] = {
     0x06, 0xF0, 0xFF,  // Usage Page (Vendor Defined 0xFFF0)
     0x09, 0x40,        // Usage (0x40)
     0xA1, 0x01,        // Collection (Application)
+    // Global items reset after End Collection above; re-declare them here
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,  //   Logical Maximum (255)
+    0x75, 0x08,        //   Report Size (8)
 
     // Report ID 0xF0: Set Auth Payload (nonce from console)
     0x85, 0xF0,        //   Report ID (240)
