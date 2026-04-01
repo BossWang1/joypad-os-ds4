@@ -44,14 +44,22 @@ static void ps4_mode_init(void)
     ps4_report_buffer[4] = 0x80;  // RY center
     ps4_report_buffer[5] = PS4_HAT_NOTHING;  // D-pad neutral (0x08), no buttons
     // Bytes 6-9: buttons and triggers already 0
-    // Set accelerometer rest state (1G on Z-axis seen in Brook as 0x2060)
-    ps4_report_buffer[21] = 0x60;
-    ps4_report_buffer[22] = 0x20;
-    // Set power level (0x1b = full battery + charging, matches Brook)
+    // Set accelerometer rest state (1G on Z-axis seen in Brook as 0x2060 at offset 24-25)
+    ps4_report_buffer[24] = 0x60;
+    ps4_report_buffer[25] = 0x20;
+    // Set power level (0x1b = full battery + charging, matches Brook at offset 30)
     ps4_report_buffer[30] = 0x1b;
-    // Set touchpad fingers to unpressed (Bit 7 of bytes 35 and 39, matches Brook)
+    // Set touchpad state (33=active, 34=increment, 35-42=fingers)
+    ps4_report_buffer[33] = 0x00;  // 0 touches
+    ps4_report_buffer[34] = 0x00;  // increment
     ps4_report_buffer[35] = 0x80;  // touchpad p1 unpressed
+    ps4_report_buffer[36] = 0xC0;  // X LSB
+    ps4_report_buffer[37] = 0x73;  // X MSB / Y LSB
+    ps4_report_buffer[38] = 0x1D;  // Y MSB
     ps4_report_buffer[39] = 0x80;  // touchpad p2 unpressed
+    ps4_report_buffer[40] = 0xC0;
+    ps4_report_buffer[41] = 0x73;
+    ps4_report_buffer[42] = 0x1D;
     memset(&ps4_output, 0, sizeof(ps4_out_report_t));
     ps4_report_counter = 0;
     ps4_timestamp = 0;
@@ -90,12 +98,10 @@ static bool ps4_mode_send_report(uint8_t player_index,
     ps4_report_buffer[0] = 0x01;
 
     // Bytes 1-4: Analog sticks (HID convention: 0=up, 255=down)
-    // Apply a more robust deadzone to ensure perfect 128 (0x80) center.
-    // This is critical for menu navigation and Options button detection in EA games.
-    ps4_report_buffer[1] = (profile_out->left_x > 120 && profile_out->left_x < 136) ? 128 : profile_out->left_x;
-    ps4_report_buffer[2] = (profile_out->left_y > 120 && profile_out->left_y < 136) ? 128 : profile_out->left_y;
-    ps4_report_buffer[3] = (profile_out->right_x > 120 && profile_out->right_x < 136) ? 128 : profile_out->right_x;
-    ps4_report_buffer[4] = (profile_out->right_y > 120 && profile_out->right_y < 136) ? 128 : profile_out->right_y;
+    ps4_report_buffer[1] = profile_out->left_x;
+    ps4_report_buffer[2] = profile_out->left_y;
+    ps4_report_buffer[3] = profile_out->right_x;
+    ps4_report_buffer[4] = profile_out->right_y;
 
     // Byte 5: D-pad (bits 0-3) + face buttons (bits 4-7)
     uint8_t up = (buttons & JP_BUTTON_DU) ? 1 : 0;
@@ -127,8 +133,9 @@ static bool ps4_mode_send_report(uint8_t player_index,
     if (buttons & JP_BUTTON_L1) byte6 |= 0x01;  // L1
     if (buttons & JP_BUTTON_R1) byte6 |= 0x02;  // R1
     
-    // Hybrid Trigger Logic:
-    // Digital bits are flipped at threshold 5 for SF6, analog is passed for FC26.
+    // Hybrid Trigger Logic (High Compatibility):
+    // Digital bits are flipped at threshold 5 to support SF6 strokes,
+    // while keeping analog values raw for FC26 replay sensitivity.
     uint8_t l2_val = profile_out->l2_analog;
     uint8_t r2_val = profile_out->r2_analog;
 
@@ -148,32 +155,38 @@ static bool ps4_mode_send_report(uint8_t player_index,
     byte7 |= ((ps4_report_counter++ & 0x3F) << 2);       // Counter in bits 2-7
     ps4_report_buffer[7] = byte7;
 
-    // Bytes 8-9: Analog triggers (passing through real values)
+    // Bytes 8-9: Analog triggers
     ps4_report_buffer[8] = l2_val;
     ps4_report_buffer[9] = r2_val;
 
     // Bytes 10-11: Timestamp (axis timing)
-    // Real DS4 increments by ~188 ticks per 1ms report
+    // 188 ticks = 1ms at 187.5kHz (DS4 internal clock)
     ps4_timestamp += 188; 
     ps4_report_buffer[10] = ps4_timestamp & 0xFF;
     ps4_report_buffer[11] = (ps4_timestamp >> 8) & 0xFF;
 
-    // Power and Touchpad Metadata (Maintenance)
-    ps4_report_buffer[30] = 0x1b; // Battery: Full + Charging
+    // Maintenance of DS4 Metadata (Matches Brook XE2)
+    // Byte 30: Battery (0x1b = Full + Charging)
+    ps4_report_buffer[30] = 0x1b; 
     
-    // Clear any potential touchpad coordinates to 0, ensuring only 0x80 unpressed bit is set.
-    // This prevents EA games from thinking the touchpad is being used.
+    // Touchpad state (Offset 33=active, 34=increment, 35-42=fingers)
+    // Must be properly set for Options button to work in FC26
+    ps4_report_buffer[33] = 0x00; // 0 touches
+    ps4_report_buffer[34]++;      // Increment touchpad counter
+    
+    // Maintain center coordinates (X=960, Y=471) -> C0 73 1D
     ps4_report_buffer[35] = 0x80; 
-    ps4_report_buffer[36] = 0x00;
-    ps4_report_buffer[37] = 0x00;
-    ps4_report_buffer[38] = 0x00;
-    ps4_report_buffer[39] = 0x80;
-    ps4_report_buffer[40] = 0x00;
-    ps4_report_buffer[41] = 0x00;
-    ps4_report_buffer[42] = 0x00;
+    ps4_report_buffer[36] = 0xC0; 
+    ps4_report_buffer[37] = 0x73; 
+    ps4_report_buffer[38] = 0x1D; 
+    ps4_report_buffer[39] = 0x80; 
+    ps4_report_buffer[40] = 0xC0; 
+    ps4_report_buffer[41] = 0x73; 
+    ps4_report_buffer[42] = 0x1D; 
 
     if (buttons & JP_BUTTON_A2) {
-        ps4_report_buffer[35] &= ~0x80; // Clear unpressed bit if clicked
+        ps4_report_buffer[33] = 0x01; // 1 touch
+        ps4_report_buffer[35] &= ~0x80; // Clear unpressed bit if touchpad is clicked
         ps4_report_buffer[39] &= ~0x80; 
     }
 

@@ -17,12 +17,12 @@
 // USB IDENTIFIERS
 // ============================================================================
 
-// Using Razer Panthera - known PS4-compatible fightstick
-#define PS4_VID             0x1532  // Razer
-#define PS4_PID             0x0401  // Panthera
+// Using Sony DualShock 4 v2 for 100% precision and compatibility
+#define PS4_VID             0x054C  // Sony
+#define PS4_PID             0x09CC  // DualShock 4 v2
 #define PS4_BCD             0x0100  // v1.00
-#define PS4_MANUFACTURER    "Razer"
-#define PS4_PRODUCT         "Panthera"
+#define PS4_MANUFACTURER    "Sony Interactive Entertainment"
+#define PS4_PRODUCT         "Wireless Controller"
 
 #define PS4_ENDPOINT_SIZE   64
 
@@ -131,13 +131,16 @@ typedef struct __attribute__((packed)) {
     // Bytes 10-11: Timestamp
     uint16_t timestamp;
 
-    // Byte 12: Padding
-    uint8_t padding;
+    // Bytes 12-32: Sensor data (gyro/accel/status)
+    uint8_t mystery[21];
 
-    // Bytes 13-34: Sensor data (gyro/accel/status)
-    uint8_t mystery[22];
+    // Byte 33: Touchpad active status
+    uint8_t touchpad_active;
 
-    // Bytes 35-42: Touchpad data
+    // Byte 34: Touchpad increment/counter
+    uint8_t touchpad_increment;
+
+    // Bytes 35-42: Touchpad data (2 fingers)
     ps4_touchpad_data_t touchpad;
 
     // Bytes 43-63: Padding to 64 bytes
@@ -180,10 +183,18 @@ static inline void ps4_init_report(ps4_in_report_t* report) {
     report->ly = PS4_JOYSTICK_MID;
     report->rx = PS4_JOYSTICK_MID;
     report->ry = PS4_JOYSTICK_MID;
-    report->dpad = PS4_HAT_NOTHING;  // 0x0F for neutral
-    // Touchpad fingers unpressed
+    report->dpad = PS4_HAT_NOTHING;  // Now 0x08 for neutral
+    report->touchpad_active = 0;
+    report->touchpad_increment = 0;
+    // Touchpad fingers unpressed and centered (X=960, Y=471)
     report->touchpad.p1.unpressed = 1;
+    report->touchpad.p1.data[0] = 0xC0; // X LSB
+    report->touchpad.p1.data[1] = 0x73; // X MSB / Y LSB
+    report->touchpad.p1.data[2] = 0x1D; // Y MSB
     report->touchpad.p2.unpressed = 1;
+    report->touchpad.p2.data[0] = 0xC0;
+    report->touchpad.p2.data[1] = 0x73;
+    report->touchpad.p2.data[2] = 0x1D;
 }
 
 // ============================================================================
@@ -203,7 +214,7 @@ static const tusb_desc_device_t ps4_device_descriptor = {
     .bcdDevice          = PS4_BCD,
     .iManufacturer      = 0x01,
     .iProduct           = 0x02,
-    .iSerialNumber      = 0x00,
+    .iSerialNumber      = 0x03,  // Enable Serial Number (mandatory for DS4)
     .bNumConfigurations = 0x01
 };
 
