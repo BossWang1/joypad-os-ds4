@@ -90,11 +90,10 @@ static bool ps4_mode_send_report(uint8_t player_index,
     ps4_report_buffer[0] = 0x01;
 
     // Bytes 1-4: Analog sticks (HID convention: 0=up, 255=down)
-    // Applying a tiny deadzone to ensure absolute 128 (0x80) when centered
-    ps4_report_buffer[1] = (profile_out->left_x > 125 && profile_out->left_x < 131) ? 128 : profile_out->left_x;
-    ps4_report_buffer[2] = (profile_out->left_y > 125 && profile_out->left_y < 131) ? 128 : profile_out->left_y;
-    ps4_report_buffer[3] = (profile_out->right_x > 125 && profile_out->right_x < 131) ? 128 : profile_out->right_x;
-    ps4_report_buffer[4] = (profile_out->right_y > 125 && profile_out->right_y < 131) ? 128 : profile_out->right_y;
+    ps4_report_buffer[1] = profile_out->left_x;
+    ps4_report_buffer[2] = profile_out->left_y;
+    ps4_report_buffer[3] = profile_out->right_x;
+    ps4_report_buffer[4] = profile_out->right_y;
 
     // Byte 5: D-pad (bits 0-3) + face buttons (bits 4-7)
     uint8_t up = (buttons & JP_BUTTON_DU) ? 1 : 0;
@@ -125,8 +124,21 @@ static bool ps4_mode_send_report(uint8_t player_index,
     uint8_t byte6 = 0;
     if (buttons & JP_BUTTON_L1) byte6 |= 0x01;  // L1
     if (buttons & JP_BUTTON_R1) byte6 |= 0x02;  // R1
-    if (buttons & JP_BUTTON_L2) byte6 |= 0x04;  // L2 (digital)
-    if (buttons & JP_BUTTON_R2) byte6 |= 0x08;  // R2 (digital)
+    
+    // SF6 / Fighting Games Optimization: Binary Triggers
+    // If digital bit is set OR analog > 10, force both digital bit and 255 analog.
+    uint8_t l2_val = 0;
+    if ((buttons & JP_BUTTON_L2) || profile_out->l2_analog > 10) {
+        byte6 |= 0x04; // L2 Digital
+        l2_val = 0xFF; // L2 Analog
+    }
+    
+    uint8_t r2_val = 0;
+    if ((buttons & JP_BUTTON_R2) || profile_out->r2_analog > 10) {
+        byte6 |= 0x08; // R2 Digital
+        r2_val = 0xFF; // R2 Analog
+    }
+
     if (buttons & JP_BUTTON_S1) byte6 |= 0x10;  // Share
     if (buttons & JP_BUTTON_S2) byte6 |= 0x20;  // Options
     if (buttons & JP_BUTTON_L3) byte6 |= 0x40;  // L3
@@ -140,10 +152,9 @@ static bool ps4_mode_send_report(uint8_t player_index,
     byte7 |= ((ps4_report_counter++ & 0x3F) << 2);       // Counter in bits 2-7
     ps4_report_buffer[7] = byte7;
 
-    // Bytes 8-9: Analog triggers with safety deadzone
-    // If analog is very low, force to 0 to ensure digital button clarity
-    ps4_report_buffer[8] = (profile_out->l2_analog < 5) ? 0 : profile_out->l2_analog;
-    ps4_report_buffer[9] = (profile_out->r2_analog < 5) ? 0 : profile_out->r2_analog;
+    // Bytes 8-9: Analog triggers (already calculated binary values)
+    ps4_report_buffer[8] = l2_val;
+    ps4_report_buffer[9] = r2_val;
 
     // Bytes 10-11: Timestamp (axis timing)
     // Real DS4 increments by ~188 ticks per 1ms report
