@@ -110,6 +110,12 @@ static bool ps4_mode_send_report(uint8_t player_index,
     uint8_t left = (buttons & JP_BUTTON_DL) ? 1 : 0;
     uint8_t right = (buttons & JP_BUTTON_DR) ? 1 : 0;
 
+    // Use D-pad Left/Right as modifiers for Touchpad Click
+    if (buttons & JP_BUTTON_A2) {
+        if (left) left = 0;
+        if (right) right = 0;
+    }
+
     uint8_t dpad;
     if (up && right)        dpad = PS4_HAT_UP_RIGHT;
     else if (up && left)    dpad = PS4_HAT_UP_LEFT;
@@ -174,21 +180,36 @@ static bool ps4_mode_send_report(uint8_t player_index,
     ps4_report_buffer[33] = 0x00; // 0 touches
     ps4_report_buffer[34]++;      // Increment touchpad counter
     
-    // Maintain center coordinates (X=960, Y=471) -> C0 73 1D
-    ps4_report_buffer[35] = 0x80; 
-    ps4_report_buffer[36] = 0xC0; 
-    ps4_report_buffer[37] = 0x73; 
-    ps4_report_buffer[38] = 0x1D; 
-    ps4_report_buffer[39] = 0x80; 
-    ps4_report_buffer[40] = 0xC0; 
-    ps4_report_buffer[41] = 0x73; 
-    ps4_report_buffer[42] = 0x1D; 
+    // Default coordinates: Center (X=960, Y=471) -> C0 73 1D
+    uint16_t tp_x = 960;
+    uint16_t tp_y = 471;
 
     if (buttons & JP_BUTTON_A2) {
-        ps4_report_buffer[33] = 0x01; // 1 touch
-        ps4_report_buffer[35] &= ~0x80; // Clear unpressed bit if touchpad is clicked
-        ps4_report_buffer[39] &= ~0x80; 
+        // Shift touch position based on D-pad modifiers
+        if (buttons & JP_BUTTON_DL) {
+            tp_x = 480; // Left Region
+        } else if (buttons & JP_BUTTON_DR) {
+            tp_x = 1440; // Right Region
+        }
+        
+        ps4_report_buffer[33] = 0x01;   // 1 touch active
+        ps4_report_buffer[35] = 0x00;   // Finger 1 pressed (unpressed=0), counter=0
+    } else {
+        ps4_report_buffer[35] = 0x80;   // Finger 1 unpressed
     }
+
+    // Finger 2 always unpressed for this simulation
+    ps4_report_buffer[39] = 0x80;
+
+    // Encode coordinates into buffer
+    ps4_report_buffer[36] = (uint8_t)(tp_x & 0xFF);
+    ps4_report_buffer[37] = (uint8_t)(((tp_y & 0x0F) << 4) | ((tp_x >> 8) & 0x0F));
+    ps4_report_buffer[38] = (uint8_t)((tp_y >> 4) & 0xFF);
+
+    // Sync p2 coordinates with p1 for consistency (even if unpressed)
+    ps4_report_buffer[40] = ps4_report_buffer[36];
+    ps4_report_buffer[41] = ps4_report_buffer[37];
+    ps4_report_buffer[42] = ps4_report_buffer[38];
 
     // Send with report_id=0x01, letting TinyUSB prepend it
     // Skip byte 0 of buffer (our report_id) and send 63 bytes of data
