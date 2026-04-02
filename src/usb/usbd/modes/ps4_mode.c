@@ -110,9 +110,9 @@ static bool ps4_mode_send_report(uint8_t player_index,
     uint8_t left = (buttons & JP_BUTTON_DL) ? 1 : 0;
     uint8_t right = (buttons & JP_BUTTON_DR) ? 1 : 0;
 
-    // Detect Touchpad Click (A2 or S1+S2 combo)
-    bool s1_s2_combo = (buttons & JP_BUTTON_S1) && (buttons & JP_BUTTON_S2);
-    bool tp_clicked = (buttons & JP_BUTTON_A2) || s1_s2_combo;
+    // Detect Touchpad Click (A2 or S2+R1 combo)
+    bool s2_r1_combo = (buttons & JP_BUTTON_S2) && (buttons & JP_BUTTON_R1);
+    bool tp_clicked = (buttons & JP_BUTTON_A2) || s2_r1_combo;
 
     // Use D-pad Left/Right as modifiers for Touchpad Click
     if (tp_clicked) {
@@ -142,7 +142,9 @@ static bool ps4_mode_send_report(uint8_t player_index,
     // Byte 6: Shoulder buttons + other buttons
     uint8_t byte6 = 0;
     if (buttons & JP_BUTTON_L1) byte6 |= 0x01;  // L1
-    if (buttons & JP_BUTTON_R1) byte6 |= 0x02;  // R1
+    if (!(s2_r1_combo)) {
+        if (buttons & JP_BUTTON_R1) byte6 |= 0x02;  // R1
+    }
     
     // Hybrid Trigger Logic (High Compatibility):
     // Digital bits are flipped at threshold 5 to support SF6 strokes,
@@ -153,8 +155,8 @@ static bool ps4_mode_send_report(uint8_t player_index,
     if (l2_val >= 5 || (buttons & JP_BUTTON_L2)) byte6 |= 0x04; // L2 Digital
     if (r2_val >= 5 || (buttons & JP_BUTTON_R2)) byte6 |= 0x08; // R2 Digital
 
-    if (!s1_s2_combo) {
-        if (buttons & JP_BUTTON_S1) byte6 |= 0x10;  // Share
+    if (buttons & JP_BUTTON_S1) byte6 |= 0x10;  // Share
+    if (!(s2_r1_combo)) {
         if (buttons & JP_BUTTON_S2) byte6 |= 0x20;  // Options
     }
     if (buttons & JP_BUTTON_L3) byte6 |= 0x40;  // L3
