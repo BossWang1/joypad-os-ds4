@@ -155,9 +155,14 @@ static bool ps4_mode_send_report(uint8_t player_index,
     byte7 |= ((ps4_report_counter++ & 0x3F) << 2);       // Counter in bits 2-7
     ps4_report_buffer[7] = byte7;
 
-    // Bytes 8-9: Analog triggers (swapped L2/R2 for PID 0x0086 investigation)
-    ps4_report_buffer[8] = r2_val;
-    ps4_report_buffer[9] = l2_val;
+    // Bytes 8-9: Analog triggers
+    ps4_report_buffer[8] = l2_val;
+    ps4_report_buffer[9] = r2_val;
+    
+    // Forçar L2 analógico para 255 se o L2 digital estiver ativo (para teste FC26)
+    if (l2_val >= 5 || (buttons & JP_BUTTON_L2)) {
+        ps4_report_buffer[8] = 0xFF;
+    }
 
     // Bytes 10-11: Timestamp (axis timing)
     // 188 ticks = 1ms at 187.5kHz (DS4 internal clock)
