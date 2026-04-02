@@ -110,8 +110,12 @@ static bool ps4_mode_send_report(uint8_t player_index,
     uint8_t left = (buttons & JP_BUTTON_DL) ? 1 : 0;
     uint8_t right = (buttons & JP_BUTTON_DR) ? 1 : 0;
 
+    // Detect Touchpad Click (A2 or S1+S2 combo)
+    bool s1_s2_combo = (buttons & JP_BUTTON_S1) && (buttons & JP_BUTTON_S2);
+    bool tp_clicked = (buttons & JP_BUTTON_A2) || s1_s2_combo;
+
     // Use D-pad Left/Right as modifiers for Touchpad Click
-    if (buttons & JP_BUTTON_A2) {
+    if (tp_clicked) {
         if (left) left = 0;
         if (right) right = 0;
     }
@@ -149,8 +153,10 @@ static bool ps4_mode_send_report(uint8_t player_index,
     if (l2_val >= 5 || (buttons & JP_BUTTON_L2)) byte6 |= 0x04; // L2 Digital
     if (r2_val >= 5 || (buttons & JP_BUTTON_R2)) byte6 |= 0x08; // R2 Digital
 
-    if (buttons & JP_BUTTON_S1) byte6 |= 0x10;  // Share
-    if (buttons & JP_BUTTON_S2) byte6 |= 0x20;  // Options
+    if (!s1_s2_combo) {
+        if (buttons & JP_BUTTON_S1) byte6 |= 0x10;  // Share
+        if (buttons & JP_BUTTON_S2) byte6 |= 0x20;  // Options
+    }
     if (buttons & JP_BUTTON_L3) byte6 |= 0x40;  // L3
     if (buttons & JP_BUTTON_R3) byte6 |= 0x80;  // R3
     ps4_report_buffer[6] = byte6;
@@ -158,7 +164,7 @@ static bool ps4_mode_send_report(uint8_t player_index,
     // Byte 7: PS + Touchpad + Counter (6-bit)
     uint8_t byte7 = 0;
     if (buttons & JP_BUTTON_A1) byte7 |= 0x01;  // PS button
-    if (buttons & JP_BUTTON_A2) byte7 |= 0x02;  // Touchpad click
+    if (tp_clicked) byte7 |= 0x02;              // Touchpad click
     byte7 |= ((ps4_report_counter++ & 0x3F) << 2);       // Counter in bits 2-7
     ps4_report_buffer[7] = byte7;
 
@@ -184,7 +190,7 @@ static bool ps4_mode_send_report(uint8_t player_index,
     uint16_t tp_x = 960;
     uint16_t tp_y = 471;
 
-    if (buttons & JP_BUTTON_A2) {
+    if (tp_clicked) {
         // Shift touch position based on D-pad modifiers
         if (buttons & JP_BUTTON_DL) {
             tp_x = 480; // Left Region
