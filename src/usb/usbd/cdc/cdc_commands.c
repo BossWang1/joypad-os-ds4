@@ -1249,28 +1249,18 @@ static void cmd_ps4auth_set(const char *json)
         const uint8_t *data = (const uint8_t *)&auth;
         int total_size = sizeof(ps4_auth_data_t);
         
-        // Build C array definition as JSON string
-        // Format: {"ok":true,"c_array":"uint8_t auth_data[SIZE] = {\n  0x00, 0x01, ...\n};"}
-        static char c_array_buf[8192];
-        int pos = 0;
-//        pos += snprintf(c_array_buf + pos, sizeof(c_array_buf) - pos,
- //                       "{\"ok\":true,\"size\":%d,\"c_array\":\"", total_size);
- //       pos += snprintf(c_array_buf + pos, sizeof(c_array_buf) - pos,
-  //                      "uint8_t auth_data[%d] = {\\n  ", total_size);
 
-        printf("%d\n", total_size);
-        for (int i = 0; i < total_size; i++) {
- //           if (i > 0 && i % 16 == 0) {
-  //              pos += snprintf(c_array_buf + pos, sizeof(c_array_buf) - pos, "\\n  ");
-  //          } else if (i > 0) {
-              pos += snprintf(c_array_buf + pos, sizeof(c_array_buf) - pos, ", ");
-   //         }
-            pos += snprintf(c_array_buf + pos, sizeof(c_array_buf) - pos, "0x%02X", data[i]);
+printf("%d\n<br />", total_size);
 
-        }
-        
- //       pos += snprintf(c_array_buf + pos, sizeof(c_array_buf) - pos, "\\n};\"}");
-        printf("%s\n", c_array_buf);
+for (int i = 0; i < total_size; i++) {
+    if (i > 0) {
+        printf(", ");
+    }
+    printf("0x%02X", data[i]);
+}
+printf("\n.");
+
+
         // Send the JSON response with C array definition
         // cdc_protocol_send_response(active_ctx, c_array_buf);
         send_ok();
