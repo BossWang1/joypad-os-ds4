@@ -345,7 +345,7 @@ bool ps4_local_auth_init(void)
     // Seed PRNG from hardware once — safe at init, avoids blocking later.
     prng_seed();
 
-    const ps4_auth_data_t *auth = (const ps4_auth_data_t *)auth_data;
+    ps4_auth_data_t auth = *(const ps4_auth_data_t *)auth_data;
 
     /*
     ps4_auth_data_t auth;
