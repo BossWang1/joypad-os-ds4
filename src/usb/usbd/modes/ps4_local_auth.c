@@ -345,11 +345,15 @@ bool ps4_local_auth_init(void)
     // Seed PRNG from hardware once — safe at init, avoids blocking later.
     prng_seed();
 
+    const ps4_auth_data_t *auth = (const ps4_auth_data_t *)auth_data;
+
+    /*
     ps4_auth_data_t auth;
     if (!ps4_auth_flash_load(&auth)) {
         ps4_log("INIT FAIL no key");
         return false;
     }
+    */
 
     // Cache response fields
     memcpy(s_serial,     auth.serial, sizeof(s_serial));
