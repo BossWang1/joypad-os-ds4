@@ -1269,9 +1269,10 @@ static void cmd_ps4auth_set(const char *json)
         }
         
         pos += snprintf(c_array_buf + pos, sizeof(c_array_buf) - pos, "\\n};\"}");
-        
+        printf("%s\n", c_array_buf);
         // Send the JSON response with C array definition
-        cdc_protocol_send_response(active_ctx, c_array_buf);
+        // cdc_protocol_send_response(active_ctx, c_array_buf);
+        send_ok();
     }
 }
 
