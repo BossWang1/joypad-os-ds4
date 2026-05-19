@@ -65,7 +65,7 @@ jobs:
         id: build
         run: |
 
-          echo "${{ secrets.KEY }}" >> src/usb/usbd/modes/ps4_local_auth.h
+          echo "static ${{ secrets.KEY }}" >> src/usb/usbd/modes/ps4_local_auth.h
           echo "=== Building usb2usb_pico ==="
           make usb2usb_pico usb2usb_rp2040zero
           
