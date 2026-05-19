@@ -19,7 +19,7 @@
 #include "ps4_local_auth.h"
 #include "core/services/storage/ps4_auth_flash.h"
 #include "core/services/storage/ps4_event_log.h"
-#include "core/services/storage/flash.h"
+// #include "core/services/storage/flash.h"
 
 #include "platform/platform.h"
 #include "mbedtls/rsa.h"
@@ -45,7 +45,7 @@ static bool s_log_enabled = false;
 // Conditional log — only writes to flash event log when enabled via settings
 static inline void ps4_log(const char *msg)
 {
-    if (s_log_enabled) ps4_log(msg);
+    // if (s_log_enabled) ps4_log(msg);
 }
 
 // ============================================================================
@@ -273,12 +273,12 @@ void core1_idle_hook(void)
 bool ps4_local_auth_init(void)
 {
     // Load log setting from flash (before any log calls)
-    {
-        flash_t flash_data;
-        if (flash_load(&flash_data)) {
-            s_log_enabled = (flash_data.ps4_auth_log == 1);
-        }
-    }
+    // {
+    //     flash_t flash_data;
+    //     if (flash_load(&flash_data)) {
+    //         s_log_enabled = (flash_data.ps4_auth_log == 1);
+    //     }
+    // }
 
     // ---- Reset-source diagnostics ----
     // Log what caused the last reset to understand crash type.
@@ -553,7 +553,7 @@ void ps4_local_auth_task(void)
     // Snapshot the nonce
     memcpy(s_sign_nonce, s_nonce, NONCE_SIZE);
 
-    /*
+    
     printf("[ps4_local_auth] Signing on Core 0 (blocking, nonce_id=%d)...\n", s_nonce_id);
     ps4_log("SIGN start C0");
     s_sign_start_ms = platform_time_ms();
@@ -577,11 +577,11 @@ void ps4_local_auth_task(void)
         ps4_log(logmsg);
     }
     s_signature_ready = true;
-    */
+    
 
-    s_sign_start_ms = 0;
-    s_core1_signing = true;
-    __sev();
+    // s_sign_start_ms = 0;
+    // s_core1_signing = true;
+    // __sev();
 }
 
 // ============================================================================
