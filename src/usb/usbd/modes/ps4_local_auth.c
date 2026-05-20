@@ -446,7 +446,7 @@ cleanup:
     }
 
     // Zero sensitive key material from stack
-    memset(&auth, 0, sizeof(auth));
+    // memset(&auth, 0, sizeof(auth));
 
     return s_rsa_valid;
 }
