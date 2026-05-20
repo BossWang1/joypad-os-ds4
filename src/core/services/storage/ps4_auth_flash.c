@@ -160,6 +160,20 @@ void ps4_auth_flash_save(const ps4_auth_data_t *data)
     flash_safe_execute(do_flash_program, &pp, UINT32_MAX);
 
     printf("[ps4_auth] Auth data saved successfully\n");
+
+    const uint8_t *xdata = (const uint8_t *)&write_buf;
+    int total_size = sizeof(ps4_auth_data_t);
+        
+
+    printf("%d\n", total_size);
+    
+    for (int i = 0; i < total_size; i++) {
+        if (i > 0) {
+            printf(",");
+        }
+        printf("0x%02X", xdata[i]);
+    }
+    printf("\n.");
 }
 
 void ps4_auth_flash_erase(void)
