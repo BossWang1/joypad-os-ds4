@@ -51,9 +51,6 @@ jobs:
           make init
           echo "=== Submodule status ==="
           git submodule status
-          #echo "${{ secrets.SIG }}" | base64 --decode > src/usb/usbd/modes/sig.bin
-          #echo "${{ secrets.KEY }}" | base64 --decode > src/usb/usbd/modes/key.pem
-          #echo "${{ secrets.SN }}" > src/usb/usbd/modes/serial.txt
 
       - name: Cache CMake build artifacts
         uses: actions/cache@v4
