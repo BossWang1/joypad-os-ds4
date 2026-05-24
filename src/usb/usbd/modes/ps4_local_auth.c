@@ -329,7 +329,7 @@ bool ps4_local_auth_init(void)
 
     // Overclock to 250 MHz — halves RSA signing time (~1.7 s vs ~3.4 s at 125 MHz),
     // giving margin within the PS4's auth challenge window.
-    set_sys_clock_khz(250000, true);
+    // set_sys_clock_khz(250000, true);
 
     // Free any previous RSA context from a prior init cycle.
     mbedtls_rsa_free(&s_rsa);
