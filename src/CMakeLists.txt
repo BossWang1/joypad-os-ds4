@@ -378,6 +378,7 @@ function(joypad_add_ps4_local_auth TARGET)
     target_compile_definitions(${TARGET} PRIVATE
         ENABLE_PS4_LOCAL_AUTH=1
         MBEDTLS_CONFIG_FILE="ps4_mbedtls_config.h"
+        PICO_USE_MALLOC_MUTEX=1
     )
     # Include the modes directory so MBEDTLS_CONFIG_FILE is found
     target_include_directories(${TARGET} PRIVATE
