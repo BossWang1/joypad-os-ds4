@@ -48,7 +48,7 @@ const OutputInterface* active_output = NULL;
 // mbedTLS RSA-2048 signing on Core 1 needs ~6–8 KB of stack.
 // The default Core 1 stack lives in SCRATCH_X (4 KB total) and overflows,
 // causing a hard fault.  Allocate an 8 KB stack in main SRAM instead.
-static uint32_t s_core1_stack[0x2000 / sizeof(uint32_t)] __attribute__((aligned(8)));
+static uint32_t s_core1_stack[0x6000 / sizeof(uint32_t)] __attribute__((aligned(8)));
 #endif
 
 // Store core1 task for wrapper - can be set after Core 1 launch
