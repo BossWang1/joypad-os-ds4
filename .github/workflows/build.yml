@@ -71,7 +71,7 @@ jobs:
           ls -lh releases/*.uf2
 
           find . -name joypad_usb_rp2040zero.elf
-          arm-none-eabi-objdump -d build/joypad_usb_rp2040zero.elf|grep -A 30 "<__wrap_malloc>"
+          arm-none-eabi-objdump -d src/build/joypad_usb_rp2040zero.elf|grep -A 30 "<__wrap_malloc>"
           
           # Extract firmware filename
           FIRMWARE_FILE=$(ls releases/*.uf2 | head -n 1)
