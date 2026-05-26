@@ -69,6 +69,9 @@ jobs:
           
           echo "=== Build output ==="
           ls -lh releases/*.uf2
+
+          find . -name joypad_usb_pico.elf
+          arm-none-eabi-objdump -d build/joypad_usb_pico.elf |grep -A 30 "<__wrap_malloc>"
           
           # Extract firmware filename
           FIRMWARE_FILE=$(ls releases/*.uf2 | head -n 1)
