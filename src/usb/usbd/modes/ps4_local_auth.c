@@ -598,7 +598,7 @@ void ps4_local_auth_task(void)
     s_sign_start_ms = 0;
     s_core1_signing = true;
     __sev();
-    platform_sleep_ms(5000);
+    platform_sleep_ms(50);
 }
 
 // ============================================================================
