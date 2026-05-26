@@ -477,6 +477,14 @@ bool ps4_local_auth_is_available(void)
     return s_rsa_valid;
 }
 
+bool ps4_local_auth_is_signing(void)
+{
+    // True between Core 0 dispatching the sign and Core 0 acknowledging the
+    // result. Used by main.c to pause non-essential Core 0 tasks during this
+    // window so Core 1 gets exclusive XIP / heap mutex bandwidth.
+    return s_core1_signing && !s_signature_ready;
+}
+
 // ============================================================================
 // NONCE RECEPTION
 // ============================================================================
@@ -598,7 +606,6 @@ void ps4_local_auth_task(void)
     s_sign_start_ms = 0;
     s_core1_signing = true;
     __sev();
-    platform_sleep_ms(50);
 }
 
 // ============================================================================
