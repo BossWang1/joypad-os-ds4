@@ -115,14 +115,15 @@ static void __not_in_flash_func(core0_main)(void)
     if (first_loop) printf("[joypad] Loop: players\n");
     players_task();//if (!signing) players_task();
     if (first_loop) printf("[joypad] Loop: storage\n");
-    if (!signing) storage_task();
+    //if (!signing) 
+    storage_task();
 
     // Poll all input interfaces FIRST so output reads freshest data this iteration
     // (Eliminates one-loop-iteration latency vs polling input after output)
     for (uint8_t i = 0; i < input_count; i++) {
       if (inputs[i] && inputs[i]->task) {
         if (first_loop) printf("[joypad] Loop: input %s\n", inputs[i]->name);
-        //if (!signing) 
+        if (!signing) 
           inputs[i]->task();
       }
     }
@@ -137,7 +138,8 @@ static void __not_in_flash_func(core0_main)(void)
     }
 
     if (first_loop) printf("[joypad] Loop: app\n");
-    if (!signing) app_task();
+    //if (!signing) 
+    app_task();
     first_loop = false;
   }
 }
