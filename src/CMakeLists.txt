@@ -391,7 +391,16 @@ function(joypad_add_ps4_local_auth TARGET)
         ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/modes
     )
     target_link_libraries(${TARGET} PRIVATE pico_mbedtls pico_rand)
-    message(STATUS "${TARGET}: PS4 local auth enabled (pico_mbedtls)")
+    # Pin mbedTLS code into SRAM so Core 1's RSA-PSS sign isn't stalled by
+    # Core 0's XIP cache thrashing. INSERT BEFORE .text in the default
+    # pico-sdk linker script via an additional -T fragment.
+    target_link_options(${TARGET} PRIVATE
+        "LINKER:-T${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/modes/ram_mbedtls.ld"
+    )
+    set_target_properties(${TARGET} PROPERTIES
+        LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/modes/ram_mbedtls.ld
+    )
+    message(STATUS "${TARGET}: PS4 local auth enabled (pico_mbedtls, mbedTLS pinned to SRAM)")
 endfunction()
 
 # Add BTstack support to a target
