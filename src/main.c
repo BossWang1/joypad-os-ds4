@@ -122,7 +122,8 @@ static void __not_in_flash_func(core0_main)(void)
     for (uint8_t i = 0; i < input_count; i++) {
       if (inputs[i] && inputs[i]->task) {
         if (first_loop) printf("[joypad] Loop: input %s\n", inputs[i]->name);
-        if (!signing) inputs[i]->task();
+        //if (!signing) 
+          inputs[i]->task();
       }
     }
 
