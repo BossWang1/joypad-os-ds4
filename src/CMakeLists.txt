@@ -391,7 +391,14 @@ function(joypad_add_ps4_local_auth TARGET)
         ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/modes
     )
     target_link_libraries(${TARGET} PRIVATE pico_mbedtls pico_rand)
-    message(STATUS "${TARGET}: PS4 local auth enabled (pico_mbedtls)")
+    # Replace pico-sdk's default memmap with a copy that pins libmbedcrypto.a /
+    # libmbedx509.a / libmbedtls.a code+rodata into RAM via EXCLUDE_FILE on the
+    # default .text and .rodata sections (their leftovers fall through to the
+    # existing *(.text*)/*(.rodata*) catchalls in .data, which is RAM AT> FLASH).
+    # This keeps Core 1's RSA-PSS sign from being starved by Core 0 XIP traffic.
+    pico_set_linker_script(${TARGET}
+        ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/modes/memmap_mbedtls_ram.ld)
+    message(STATUS "${TARGET}: PS4 local auth enabled (pico_mbedtls, mbedTLS pinned to RAM)")
 endfunction()
 
 # Add BTstack support to a target
