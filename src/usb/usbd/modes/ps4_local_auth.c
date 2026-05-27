@@ -26,6 +26,7 @@
 #include "mbedtls/sha256.h"
 #include "mbedtls/bignum.h"
 #include "mbedtls/md.h"
+#include "pico/platform.h"
 #include "pico/rand.h"
 #include "hardware/clocks.h"
 #include "hardware/sync.h"
@@ -149,7 +150,8 @@ static void prng_seed(void)
 }
 
 // xorshift128+ — period 2^128 - 1, passes BigCrush.
-static inline uint64_t prng_next(void)
+// __always_inline so it lands in rng_fn's RAM section (no XIP fetch mid-sign).
+static __always_inline uint64_t prng_next(void)
 {
     uint64_t s1 = s_prng_s0;
     const uint64_t s0 = s_prng_s1;
@@ -165,7 +167,7 @@ static inline uint64_t prng_next(void)
 static volatile uint32_t s_rng_calls = 0;
 static volatile uint32_t s_rng_bytes = 0;
 
-static int rng_fn(void *ctx, unsigned char *output, size_t len)
+static int __not_in_flash_func(rng_fn)(void *ctx, unsigned char *output, size_t len)
 {
     (void)ctx;
     uint32_t n = ++s_rng_calls;
@@ -217,7 +219,7 @@ static crash_detect_t s_crash_detect
 // Kept for reference; SRAM breadcrumbs above are more reliable.
 #define SIGN_SCRATCH watchdog_hw->scratch[6]
 
-static void ps4_do_sign(void)
+static void __not_in_flash_func(ps4_do_sign)(void)
 {
     // Step 1: SHA-256 of the first 256 bytes of the nonce snapshot
     printf("[ps4_sign C1] step1 SHA256 start\n");
@@ -279,7 +281,9 @@ static void ps4_do_sign(void)
 // Override of the weak core1_idle_hook() in main.c.
 // Called from Core 1's idle loop after waking from __wfe().
 // When PS4 auth is not in use (no s_core1_signing), returns immediately.
-void core1_idle_hook(void)
+// Pinned to SRAM — runs on Core 1 while Core 0 hammers the XIP cache; any
+// flash fetch here would block on Core 0's bus activity.
+void __not_in_flash_func(core1_idle_hook)(void)
 {
     // Only run when Core 0 has queued a signing request and it's not done yet
     if (!s_core1_signing || s_signature_ready || !s_rsa_valid) return;
@@ -477,7 +481,7 @@ bool ps4_local_auth_is_available(void)
     return s_rsa_valid;
 }
 
-bool ps4_local_auth_is_signing(void)
+bool __not_in_flash_func(ps4_local_auth_is_signing)(void)
 {
     // True between Core 0 dispatching the sign and Core 0 acknowledging the
     // result. Used by main.c to pause non-essential Core 0 tasks during this
