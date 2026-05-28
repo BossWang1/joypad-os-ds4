@@ -8,6 +8,13 @@ project(joypad C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+# Must be set before pico_sdk_init() so pico-sdk's own pico_malloc.c picks it
+# up when it gets compiled. Required for PS4 RSA-PSS signing on Core 1 to
+# coexist safely with TinyUSB/BTstack mallocs on Core 0 — otherwise the
+# unlocked newlib free-list gets trampled and mbedTLS reads garbage MPI
+# buffers (manifests as MPI_NEGATIVE_VALUE or a hang in _int_malloc).
+add_compile_definitions(PICO_USE_MALLOC_MUTEX=1)
+
 # Initialize the SDK
 pico_sdk_init()
 
@@ -384,7 +391,14 @@ function(joypad_add_ps4_local_auth TARGET)
         ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/modes
     )
     target_link_libraries(${TARGET} PRIVATE pico_mbedtls pico_rand)
-    message(STATUS "${TARGET}: PS4 local auth enabled (pico_mbedtls)")
+    # Replace pico-sdk's default memmap with a copy that pins libmbedcrypto.a /
+    # libmbedx509.a / libmbedtls.a code+rodata into RAM via EXCLUDE_FILE on the
+    # default .text and .rodata sections (their leftovers fall through to the
+    # existing *(.text*)/*(.rodata*) catchalls in .data, which is RAM AT> FLASH).
+    # This keeps Core 1's RSA-PSS sign from being starved by Core 0 XIP traffic.
+    pico_set_linker_script(${TARGET}
+        ${CMAKE_CURRENT_SOURCE_DIR}/usb/usbd/modes/memmap_mbedtls_ram.ld)
+    message(STATUS "${TARGET}: PS4 local auth enabled (pico_mbedtls, mbedTLS pinned to RAM)")
 endfunction()
 
 # Add BTstack support to a target
@@ -1000,6 +1014,12 @@ target_compile_definitions(joypad_usb_pico PRIVATE
     PICO_DEFAULT_PIO_USB_DP_PIN=16
     BOARD_TUH_RHPORT=1
     USE_BOOTSEL_BUTTON=1
+    # DIAGNOSTIC: disable Core 1 flash lockout IRQ to test whether it is what
+    # stalls RSA-PSS signing. With this set, Core 0 must NOT issue any flash
+    # writes (storage_task, BTstack TLV, ps4_event_log) while Core 1 is busy,
+    # or flash contents will be corrupted. Safe only for the duration of this
+    # PS4 auth bring-up test — remove once a real fix is in place.
+    #CONFIG_NO_FLASH_LOCKOUT=1
 )
 target_sources(joypad_usb_pico PUBLIC ${COMMON_SOURCES} ${USB_DEVICE_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb/app.c

@@ -26,6 +26,7 @@
 #include "mbedtls/sha256.h"
 #include "mbedtls/bignum.h"
 #include "mbedtls/md.h"
+#include "pico.h"
 #include "pico/rand.h"
 #include "hardware/clocks.h"
 #include "hardware/sync.h"
@@ -45,7 +46,7 @@ static bool s_log_enabled = false;
 // Conditional log — only writes to flash event log when enabled via settings
 static inline void ps4_log(const char *msg)
 {
-    // if (s_log_enabled) ps4_log(msg);
+    if (s_log_enabled) ps4_event_log_write(msg);
 }
 
 // ============================================================================
@@ -149,7 +150,8 @@ static void prng_seed(void)
 }
 
 // xorshift128+ — period 2^128 - 1, passes BigCrush.
-static inline uint64_t prng_next(void)
+// __always_inline so it lands in rng_fn's RAM section (no XIP fetch mid-sign).
+static __always_inline uint64_t prng_next(void)
 {
     uint64_t s1 = s_prng_s0;
     const uint64_t s0 = s_prng_s1;
@@ -159,9 +161,26 @@ static inline uint64_t prng_next(void)
     return s_prng_s1 + s0;
 }
 
-static int rng_fn(void *ctx, unsigned char *output, size_t len)
+// Diagnostic counters — reset by Core 0 before each sign, read by Core 1
+// during/after sign to detect runaway loops in mbedTLS that keep asking
+// rng_fn for more bytes (e.g. blinding value regeneration not converging).
+static volatile uint32_t s_rng_calls = 0;
+static volatile uint32_t s_rng_bytes = 0;
+
+static int __not_in_flash_func(rng_fn)(void *ctx, unsigned char *output, size_t len)
 {
     (void)ctx;
+    uint32_t n = ++s_rng_calls;
+    s_rng_bytes += (uint32_t)len;
+
+    // Heartbeat: print every 200 calls so a hang inside mbedTLS still emits
+    // something. Cheap: PSS sign normally takes ~10-30 rng_fn calls total,
+    // so seeing this fire at all is itself a strong signal something looped.
+    if ((n % 200u) == 0u) {
+        printf("[ps4_sign C1] rng_fn heartbeat: calls=%lu bytes=%lu last_len=%u\n",
+               (unsigned long)n, (unsigned long)s_rng_bytes, (unsigned)len);
+    }
+
     size_t i = 0;
     while (i < len) {
         uint64_t r = prng_next();
@@ -200,7 +219,7 @@ static crash_detect_t s_crash_detect
 // Kept for reference; SRAM breadcrumbs above are more reliable.
 #define SIGN_SCRATCH watchdog_hw->scratch[6]
 
-static void ps4_do_sign(void)
+static void __not_in_flash_func(ps4_do_sign)(void)
 {
     // Step 1: SHA-256 of the first 256 bytes of the nonce snapshot
     printf("[ps4_sign C1] step1 SHA256 start\n");
@@ -211,7 +230,9 @@ static void ps4_do_sign(void)
     printf("[ps4_sign C1] step1 SHA256 done\n");
 
     // Step 2: RSA-PSS sign (result 256 bytes)
-    printf("[ps4_sign C1] step2 RSA-PSS start\n");
+    s_rng_calls = 0;
+    s_rng_bytes = 0;
+    printf("[ps4_sign C1] step2 RSA-PSS start (rng counters reset)\n");
     uint8_t rsa_sig[256];
     SIGN_SCRATCH = 2;
     s_crash_detect.step = 2;
@@ -225,7 +246,8 @@ static void ps4_do_sign(void)
         rsa_sig
     );
 
-    printf("[ps4_sign C1] step2 RSA-PSS ret=%d\n", ret);
+    printf("[ps4_sign C1] step2 RSA-PSS ret=%d rng_calls=%lu rng_bytes=%lu\n",
+           ret, (unsigned long)s_rng_calls, (unsigned long)s_rng_bytes);
     SIGN_SCRATCH = 3;
     s_crash_detect.step = 3;
 
@@ -259,7 +281,9 @@ static void ps4_do_sign(void)
 // Override of the weak core1_idle_hook() in main.c.
 // Called from Core 1's idle loop after waking from __wfe().
 // When PS4 auth is not in use (no s_core1_signing), returns immediately.
-void core1_idle_hook(void)
+// Pinned to SRAM — runs on Core 1 while Core 0 hammers the XIP cache; any
+// flash fetch here would block on Core 0's bus activity.
+void __not_in_flash_func(core1_idle_hook)(void)
 {
     // Only run when Core 0 has queued a signing request and it's not done yet
     if (!s_core1_signing || s_signature_ready || !s_rsa_valid) return;
@@ -329,7 +353,7 @@ bool ps4_local_auth_init(void)
 
     // Overclock to 250 MHz — halves RSA signing time (~1.7 s vs ~3.4 s at 125 MHz),
     // giving margin within the PS4's auth challenge window.
-    set_sys_clock_khz(250000, true);
+    // set_sys_clock_khz(250000, true);
 
     // Free any previous RSA context from a prior init cycle.
     mbedtls_rsa_free(&s_rsa);
@@ -459,6 +483,14 @@ bool ps4_local_auth_reload(void)
 bool ps4_local_auth_is_available(void)
 {
     return s_rsa_valid;
+}
+
+bool __not_in_flash_func(ps4_local_auth_is_signing)(void)
+{
+    // True between Core 0 dispatching the sign and Core 0 acknowledging the
+    // result. Used by main.c to pause non-essential Core 0 tasks during this
+    // window so Core 1 gets exclusive XIP / heap mutex bandwidth.
+    return s_core1_signing && !s_signature_ready;
 }
 
 // ============================================================================

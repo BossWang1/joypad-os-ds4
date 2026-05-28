@@ -61,6 +61,13 @@ static volatile bool core1_task_ready = false;
 // flash ops must always originate from Core 0 while Core 1 handles lockout.
 __attribute__((weak)) void core1_idle_hook(void) {}
 
+// Weak default — overridden by ps4_local_auth.c when PS4 local auth is built.
+// Returns true while Core 1 is mid-sign so main loop can skip storage_task()
+// (the only Core 0 task that triggers a hardware-level Core 1 lockout via
+// flash_safe_execute). Other tasks are safe to run because mbedTLS lives
+// in RAM, see memmap_mbedtls_ram.ld.
+__attribute__((weak)) bool ps4_local_auth_is_signing(void) { return false; }
+
 // Core 1 wrapper - initializes flash safety, then waits for and runs actual task
 static void core1_wrapper(void) {
   // Initialize multicore lockout for flash_safe_execute to work
@@ -97,12 +104,22 @@ static void __not_in_flash_func(core0_main)(void)
   static bool first_loop = true;
   while (1)
   {
+    // mbedTLS code+rodata now lives in RAM (memmap_mbedtls_ram.ld), so Core 0
+    // XIP traffic from inputs/app no longer stalls Core 1's RSA-PSS sign.
+    // The only Core 0 task that still MUST be gated is storage_task: it can
+    // call flash_safe_execute(), which fires the multicore lockout IRQ on
+    // Core 1 and yanks it out of mbedTLS mid-MPI — a hardware-level NMI we
+    // cannot work around from RAM placement alone.
+    bool signing = ps4_local_auth_is_signing();
+
     if (first_loop) printf("[joypad] Loop: leds\n");
     leds_task();
+
     if (first_loop) printf("[joypad] Loop: players\n");
     players_task();
+
     if (first_loop) printf("[joypad] Loop: storage\n");
-    storage_task();
+    if (!signing) storage_task();
 
     // Poll all input interfaces FIRST so output reads freshest data this iteration
     // (Eliminates one-loop-iteration latency vs polling input after output)
@@ -122,7 +139,8 @@ static void __not_in_flash_func(core0_main)(void)
     }
 
     if (first_loop) printf("[joypad] Loop: app\n");
-    app_task();
+    //if (!signing) 
+      app_task();
     first_loop = false;
   }
 }

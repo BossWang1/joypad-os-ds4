@@ -48,6 +48,12 @@ bool ps4_local_auth_reload(void);
 // Returns true if local auth is available (key material loaded successfully).
 bool ps4_local_auth_is_available(void);
 
+// Returns true while Core 1 is mid-sign and Core 0 hasn't picked up the result.
+// Core 0 main loop uses this to pause non-essential tasks (LEDs, players,
+// storage, input polling, app) so Core 1 gets exclusive XIP/bus access.
+// The USB device task is NOT gated — PS4 still needs status polling answered.
+bool ps4_local_auth_is_signing(void);
+
 // ============================================================================
 // Nonce reception (from PS4 console)
 // ============================================================================
