@@ -139,7 +139,7 @@ static void __not_in_flash_func(core0_main)(void)
     }
 
     if (first_loop) printf("[joypad] Loop: app\n");
-    app_task();
+    if (!signing) app_task();
     first_loop = false;
   }
 }
