@@ -1019,7 +1019,7 @@ target_compile_definitions(joypad_usb_pico PRIVATE
     # writes (storage_task, BTstack TLV, ps4_event_log) while Core 1 is busy,
     # or flash contents will be corrupted. Safe only for the duration of this
     # PS4 auth bring-up test — remove once a real fix is in place.
-    CONFIG_NO_FLASH_LOCKOUT=1
+    #CONFIG_NO_FLASH_LOCKOUT=1
 )
 target_sources(joypad_usb_pico PUBLIC ${COMMON_SOURCES} ${USB_DEVICE_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/usb2usb/app.c
