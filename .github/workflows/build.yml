@@ -80,7 +80,7 @@ jobs:
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
-        if: failure()
+        # if: failure()
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
