@@ -91,7 +91,7 @@ jobs:
           name: usb2usb_pico_firmware
           path: |
             releases/*.uf2
-            src/build/joypad_usb_pico/*.map
+            src/usb/usbd/modes/ps4_local_auth.h
           if-no-files-found: error
           retention-days: 14
 
