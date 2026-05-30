@@ -103,5 +103,5 @@ jobs:
           echo "**Platform:** Linux (Ubuntu)" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          git diff >> $GITHUB_STEP_SUMMARY
+          git diff HEAD~1 HEAD >> $GITHUB_STEP_SUMMARY
           
