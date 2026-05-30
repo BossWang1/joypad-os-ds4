@@ -118,8 +118,11 @@ static void __not_in_flash_func(core0_main)(void)
     if (first_loop) printf("[joypad] Loop: players\n");
     players_task();
 
-    if (first_loop) printf("[joypad] Loop: storage\n");
-    if (!signing) storage_task();
+    if (first_loop) {
+      printf("[joypad] Loop: storage\n");
+    //if (!signing) 
+      storage_task();
+    }
 
     // Poll all input interfaces FIRST so output reads freshest data this iteration
     // (Eliminates one-loop-iteration latency vs polling input after output)
