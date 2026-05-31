@@ -585,7 +585,7 @@ void ps4_local_auth_task(void)
     // Snapshot the nonce
     memcpy(s_sign_nonce, s_nonce, NONCE_SIZE);
 
-    
+    /*
     printf("[ps4_local_auth] Signing on Core 0 (blocking, nonce_id=%d)...\n", s_nonce_id);
     ps4_log("SIGN start C0");
     s_sign_start_ms = platform_time_ms();
@@ -609,12 +609,13 @@ void ps4_local_auth_task(void)
         ps4_log(logmsg);
     }
     s_signature_ready = true;
-    
+    */
 
-    // s_sign_start_ms = 0;
-    // s_core1_signing = true;
-    // __sev();
+    s_sign_start_ms = 0;
+    s_core1_signing = true;
+    __sev();
 }
+
 
 // ============================================================================
 // STATUS AND RETRIEVAL
