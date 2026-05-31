@@ -2028,8 +2028,8 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
 
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize)
 {
-    printf("[usbd] set_report_cb: itf=%d report_id=%d type=%d len=%d mode=%d\n",
-           itf, report_id, report_type, bufsize, output_mode);
+   // printf("[usbd] set_report_cb: itf=%d report_id=%d type=%d len=%d mode=%d\n",
+    //       itf, report_id, report_type, bufsize, output_mode);
 
     // SInput/KB/Mouse composite: route by interface
     if (output_mode == USB_OUTPUT_MODE_SINPUT ||
