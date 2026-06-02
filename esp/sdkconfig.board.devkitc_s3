@@ -1,0 +1,14 @@
+# Espressif ESP32-S3-DevKitC-1 board overrides
+# Button:   GPIO 0  (BOOT button)
+# NeoPixel: GPIO 48 (single onboard WS2812 RGB LED, active high, no power gate)
+# Console:  USB Serial/JTAG (default ESP-IDF) on GPIO 19/20
+#
+# This board does NOT ship with TinyUF2, so `make flash` (which expects a
+# mounted UF2 volume) won't apply unless you install TinyUF2 separately.
+# Flash via stock esptool instead:
+#   make build BOARD=devkitc_s3
+#   . ./env.sh && idf.py -p /dev/ttyACM0 flash monitor
+
+# 8 MB flash (N8 / N8R2 are the most common DevKitC-1 SKUs).
+# Bump to 16MB if you have an N16R8.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
