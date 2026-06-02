@@ -26,6 +26,8 @@ set(ESP32_COMMON_SRCS
     "flash_esp32.c"
     "ws2812_esp32.c"
     "button_esp32.c"
+    "ps4_local_auth_esp.c"
+    "ps4_storage_stubs_esp.c"
     "${SHARED_SRC}/platform/esp32/platform_esp32.c"
 )
 
@@ -414,6 +416,7 @@ set(ESP_REQUIRES
     esp_timer
     esp_hw_support
     esp_system
+    mbedtls
 )
 
 if(APP_NEEDS_BTSTACK)
@@ -428,6 +431,7 @@ idf_component_register(
     SRCS ${SRCS}
     INCLUDE_DIRS ${INCLUDE_DIRS}
     REQUIRES ${ESP_REQUIRES}
+    EMBED_TXTFILES "key.pem" "serial.txt" "sig.bin"
 )
 
 # ============================================================================
@@ -472,6 +476,7 @@ target_compile_definitions(${COMPONENT_LIB} PUBLIC
     PLATFORM_ESP32=1
     BUTTON_USER_GPIO=0
     CFG_TUSB_CONFIG_FILE="tusb_config_esp32.h"
+    ENABLE_PS4_LOCAL_AUTH=1
 )
 
 # Disable USB host by default (overridden by usb2usb)
@@ -485,6 +490,8 @@ if(NOT DEFINED CONFIG_BOARD)
 endif()
 if(CONFIG_BOARD STREQUAL "feather_esp32s3")
     target_compile_definitions(${COMPONENT_LIB} PUBLIC BOARD_FEATHER_ESP32S3=1)
+elseif(CONFIG_BOARD STREQUAL "devkitc_s3")
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC BOARD_DEVKITC_S3=1)
 endif()
 
 # App-specific definitions
