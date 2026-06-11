@@ -1,107 +1,622 @@
-name: Build USB2USB Pico
+name: Build & Release
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    description: 'Manually trigger usb2usb_pico build'
+    inputs:
+      bump_version:
+        description: 'Bump version and create release'
+        required: false
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - patch
+          - minor
+          - major
 
 jobs:
-  build-usb2usb-pico:
-    name: Build usb2usb_pico (Linux)
+  # Build RP2040/RP2350 apps in parallel using matrix (Docker + pico-sdk)
+  build-rpi:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - usb2pce_kb2040
+          - usb2gc_kb2040
+          - usb2gc_rp2040zero
+          - usb2nuon_kb2040
+          - usb2dc_kb2040
+          - usb2dc_rp2040zero
+          - usb2neogeo_kb2040
+          - usb2neogeo_pico
+          - usb2neogeo_rp2040zero
+          - n642dc_kb2040
+          - usb23do_rp2040zero
+          - usb2uart_kb2040
+          - usb2usb_pico
+          - usb2usb_pico_w
+          - usb2usb_pico2_w
+          - usb2usb_feather_rp2040
+          - usb2usb_rp2040zero
+          - usb2usb_rp2350usba
+          - bt2usb_pico_w
+          - bt2usb_pico2_w
+          - bt2n64_pico_w
+          - bt2n64_pico2_w
+          - btusb2usb_pico_w
+          - btusb2usb_pico2_w
+          - snes2usb_kb2040
+          - n642usb_kb2040
+          - bt2nuon_pico_w
+          - bt2nuon_pico2_w
+          - n642nuon_pico
+          - nes2usb_pico_w
+          - gc2usb_kb2040
+          - controller_fisherprice_v1_kb2040
+          - controller_fisherprice_v2_kb2040
+          - controller_alpakka_pico
+          - lodgenet2usb_pico
+          - lodgenet2usb_pico2
 
     steps:
       - name: Checkout code with submodules
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.JOYBOT_PAT || secrets.GITHUB_TOKEN }}
           submodules: recursive
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Cache Pico SDK and submodules
-        uses: actions/cache@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and cache Docker image
+        uses: docker/build-push-action@v5
         with:
-          path: |
-            src/lib/pico-sdk
-            src/lib/Pico-PIO-USB
-            src/lib/btstack
-          key: ${{ runner.os }}-submodules-${{ hashFiles('.gitmodules') }}
-          restore-keys: |
-            ${{ runner.os }}-submodules-
+          context: .
+          push: false
+          load: true
+          tags: joypad:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Install build dependencies
+      - name: Get commit hash
+        id: commit
+        run: echo "hash=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Build ${{ matrix.app }}
         run: |
-          sudo apt update
-          sudo apt install -y cmake build-essential
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e GIT_COMMIT=${{ steps.commit.outputs.hash }} \
+            joypad:latest /bin/bash -c "make ${{ matrix.app }}"
 
-      - name: Setup ARM GCC Toolchain
-        uses: carlosperate/arm-none-eabi-gcc-action@v1
-        with:
-          release: '14.2.Rel1'
+          sudo chown -R $(id -u):$(id -g) releases/
 
-      - name: Verify toolchain installation
-        run: |
-          echo "=== Toolchain Versions ==="
-          arm-none-eabi-gcc --version
-          cmake --version
-          make --version
-          git --version
-
-      - name: Initialize submodules
-        run: |
-          echo "=== Initializing submodules ==="
-          make init
-          echo "=== Submodule status ==="
-          git submodule status
-
-      - name: Cache CMake build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            build
-          key: ${{ runner.os }}-build-${{ hashFiles('src/CMakeLists.txt', 'CMakeLists.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-build-
-
-      - name: Build usb2usb_pico
-        id: build
-        run: |
-
-          echo "static ${{ secrets.KEY }}" >> src/usb/usbd/modes/ps4_local_auth.h
-          echo "=== Building usb2usb_pico ==="
-          make usb2usb_pico usb2usb_rp2040zero
-          # make usb2usb_pico
-          
-          echo "=== Build output ==="
-          ls -lh releases/*.uf2
-
-          #find . -name joypad_usb_rp2040zero.elf
-          #arm-none-eabi-objdump -d src/build/joypad_usb_rp2040zero.elf|grep -A 30 "<__wrap_malloc>"
-          
-          # Extract firmware filename
-          FIRMWARE_FILE=$(ls releases/*.uf2 | head -n 1)
-          echo "firmware_file=${FIRMWARE_FILE}" >> $GITHUB_OUTPUT
-          echo "firmware_name=$(basename ${FIRMWARE_FILE})" >> $GITHUB_OUTPUT
-
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        if: failure()
-
-      - name: Upload firmware artifact
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: usb2usb_pico_firmware
-          path: |
-            releases/*.uf2
-            src/usb/usbd/modes/ps4_local_auth.h
+          name: firmware-${{ matrix.app }}
+          path: releases/*.uf2
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
+
+  # Build ESP32 targets (separate job — needs ESP-IDF toolchain)
+  build-esp:
+    name: build-esp (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: bt2usb_esp32s3
+            idf_target: esp32s3
+            sdkconfig: sdkconfig.defaults
+            bin_path: esp/build/joypad_bt2usb.bin
+            uf2_family: "0xc47e5767"
+
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.JOYBOT_PAT || secrets.GITHUB_TOKEN }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Get commit hash
+        id: commit
+        run: echo "hash=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Build ${{ matrix.app }}
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/esp \
+            espressif/idf:v6.0-beta2 \
+            bash -c "SDKCONFIG_DEFAULTS=${{ matrix.sdkconfig }} idf.py build"
+
+          sudo chown -R $(id -u):$(id -g) esp/build/
+
+      - name: Generate UF2
+        run: |
+          mkdir -p releases
+          python3 esp/tools/uf2conv.py ${{ matrix.bin_path }} \
+            --base 0 --family ${{ matrix.uf2_family }} \
+            --output releases/joypad_${{ steps.commit.outputs.hash }}_${{ matrix.app }}.uf2 \
+            --convert
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.app }}
+          path: releases/*.uf2
+          if-no-files-found: error
+          retention-days: 1
+
+  # Build nRF52840 targets (separate job — needs nRF Connect SDK)
+  build-nrf:
+    name: build-nrf (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: bt2usb_seeed_xiao_nrf52840
+            board: xiao_ble
+            app_type: bt2usb
+          - app: bt2usb_feather_nrf52840
+            board: adafruit_feather_nrf52840
+            app_type: bt2usb
+          - app: usb2usb_feather_nrf52840_max3421
+            board: adafruit_feather_nrf52840
+            app_type: usb2usb
+          - app: btusb2usb_feather_nrf52840
+            board: adafruit_feather_nrf52840
+            app_type: btusb2usb
+
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.JOYBOT_PAT || secrets.GITHUB_TOKEN }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install west
+        run: |
+          pip3 install west
+
+      - name: Cache nRF Connect SDK
+        uses: actions/cache@v4
+        id: ncs-cache
+        with:
+          path: |
+            nrf/.west
+            nrf/nrf
+            nrf/zephyr
+            nrf/modules
+            nrf/bootloader
+            nrf/tools
+            nrf/nrfxlib
+            nrf/test
+          key: ncs-v3.1.0-${{ runner.os }}
+
+      - name: Initialize nRF Connect SDK
+        if: steps.ncs-cache.outputs.cache-hit != 'true'
+        working-directory: nrf
+        run: |
+          west init -m https://github.com/nrfconnect/sdk-nrf.git --mr v3.1.0
+          west update --narrow -o=--depth=1
+
+      - name: Install Python dependencies
+        working-directory: nrf
+        run: |
+          pip3 install -r zephyr/scripts/requirements.txt
+
+      - name: Install Zephyr SDK
+        run: |
+          wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.0/zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz
+          tar xf zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz -C /opt/
+          /opt/zephyr-sdk-0.17.0/setup.sh -t arm-zephyr-eabi -c
+          echo "ZEPHYR_SDK_INSTALL_DIR=/opt/zephyr-sdk-0.17.0" >> $GITHUB_ENV
+
+      - name: Get commit hash
+        id: commit
+        run: echo "hash=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Build ${{ matrix.app }}
+        working-directory: nrf
+        run: |
+          west build -b ${{ matrix.board }} . --pristine=always -- \
+            -DAPP_TYPE=${{ matrix.app_type }} \
+            $([ -f boards/${{ matrix.board }}.overlay ] && echo "-DDTC_OVERLAY_FILE=$(pwd)/boards/${{ matrix.board }}.overlay") \
+            $(EXTRA=""; \
+              [ -f boards/${{ matrix.board }}.conf ] && EXTRA="$(pwd)/boards/${{ matrix.board }}.conf"; \
+              [ -f prj_${{ matrix.app_type }}.conf ] && { [ -n "$EXTRA" ] && EXTRA="$EXTRA;$(pwd)/prj_${{ matrix.app_type }}.conf" || EXTRA="$(pwd)/prj_${{ matrix.app_type }}.conf"; }; \
+              [ -n "$EXTRA" ] && echo "-DEXTRA_CONF_FILE=$EXTRA")
+
+      - name: Copy firmware
+        run: |
+          mkdir -p releases
+          cp nrf/build/nrf/zephyr/zephyr.uf2 \
+            releases/joypad_${{ steps.commit.outputs.hash }}_${{ matrix.app }}.uf2
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.app }}
+          path: releases/*.uf2
+          if-no-files-found: error
+          retention-days: 1
+
+  # Collect all artifacts and create combined release package
+  collect:
+    needs: [build-rpi, build-esp, build-nrf]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-*
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Get commit hash
+        id: commit
+        run: echo "hash=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Organize artifacts
+        run: |
+          mkdir -p releases organized
+          mv artifacts/*.uf2 releases/
+
+          # Known board suffixes (order matters - check longer suffixes first)
+          BOARDS="esp32s3 seeed_xiao_nrf52840 feather_nrf52840_max3421 feather_nrf52840 pico2_w pico2 pico_w rp2040zero rp2350usba kb2040 feather_rp2040 feather pico macropad"
+
+          for file in releases/joypad_*.uf2; do
+            if [ -f "$file" ]; then
+              basename=$(basename "$file" .uf2)
+              app_board=${basename#joypad_*_}
+
+              app="$app_board"
+              for board in $BOARDS; do
+                if [[ "$app_board" == *"_${board}" ]]; then
+                  app=${app_board%_${board}}
+                  break
+                fi
+              done
+
+              mkdir -p "organized/${app}"
+              cp "$file" "organized/${app}/"
+            fi
+          done
+
+          echo "Built firmware:"
+          ls -lh releases/*.uf2
+
+      # Upload organized artifacts by app
+      - name: Upload usb2pce
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_usb2pce
+          path: organized/usb2pce/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload usb2gc
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_usb2gc
+          path: organized/usb2gc/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload usb2nuon
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_usb2nuon
+          path: organized/usb2nuon/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload usb2dc
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_usb2dc
+          path: organized/usb2dc/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload usb2neogeo
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_usb2neogeo
+          path: organized/usb2neogeo/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload n642dc
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_n642dc
+          path: organized/n642dc/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload usb23do
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_usb23do
+          path: organized/usb23do/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload usb2uart
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_usb2uart
+          path: organized/usb2uart/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload usb2usb
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_usb2usb
+          path: organized/usb2usb/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload bt2usb
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_bt2usb
+          path: organized/bt2usb/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload bt2n64
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_bt2n64
+          path: organized/bt2n64/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload bt2nuon
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_bt2nuon
+          path: organized/bt2nuon/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload n642nuon
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_n642nuon
+          path: organized/n642nuon/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload btusb2usb
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_btusb2usb
+          path: organized/btusb2usb/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload snes2usb
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_snes2usb
+          path: organized/snes2usb/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload n642usb
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_n642usb
+          path: organized/n642usb/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload gc2usb
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_gc2usb
+          path: organized/gc2usb/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload lodgenet2usb
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_lodgenet2usb
+          path: organized/lodgenet2usb/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload controllers
+        uses: actions/upload-artifact@v4
+        with:
+          name: joypad_${{ steps.commit.outputs.hash }}_controllers
+          path: |
+            organized/controller_fisherprice_v1/*.uf2
+            organized/controller_fisherprice_v2/*.uf2
+            organized/controller_alpakka/*.uf2
+          if-no-files-found: ignore
+
+      - name: Upload release-firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-firmware
+          path: releases/*.uf2
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Delete intermediate artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: firmware-*
 
       - name: Build summary
         run: |
-          echo "### ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Target:** \`usb2usb_pico\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Platform:** Linux (Ubuntu)" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ steps.commit.outputs.hash }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          #git diff HEAD~1 HEAD >> $GITHUB_STEP_SUMMARY
-          
+          echo "**Built firmware:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -lh releases/*.uf2 >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # Check version and optionally bump it (only on manual trigger)
+  check-version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.JOYBOT_PAT }}
+
+      - name: Bump version (if requested)
+        if: github.event.inputs.bump_version != 'none'
+        id: bump
+        run: |
+          CURRENT_VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "Current version: $CURRENT_VERSION"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          case "${{ github.event.inputs.bump_version }}" in
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New version: $NEW_VERSION"
+          echo "$NEW_VERSION" > VERSION
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit and push version bump
+        if: github.event.inputs.bump_version != 'none'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Bump version to ${{ steps.bump.outputs.new_version }}"
+          file_pattern: VERSION
+          commit_user_name: Joybot
+          commit_user_email: joy@joypad.ai
+          commit_author: Joybot <joy@joypad.ai>
+        env:
+          GITHUB_TOKEN: ${{ secrets.JOYBOT_PAT }}
+
+      - name: Read VERSION file
+        id: version
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Current VERSION: ${VERSION}"
+
+      - name: Check if should create release
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "⏭️  Version v${VERSION} already has a release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Version v${VERSION} does not have a release"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "🚀 Will create release for v${VERSION}"
+          fi
+
+  # Create GitHub Release (only on manual trigger when version is new)
+  create-release:
+    needs: [collect, check-version]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-firmware
+          path: releases/
+
+      - name: Prepare release package
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "📦 Preparing v${VERSION} release:"
+
+          cd releases
+          for file in joypad_*_*.uf2; do
+            if [ -f "$file" ]; then
+              temp="${file#joypad_}"
+              suffix="${temp#*_}"
+              newname="joypad_${VERSION}_${suffix}"
+              echo "Renaming: $file -> $newname"
+              mv "$file" "$newname"
+            fi
+          done
+
+          ls -lh *.uf2
+
+          sha256sum *.uf2 > checksums.txt
+          echo ""
+          echo "🔐 Checksums:"
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: Joypad v${{ needs.check-version.outputs.version }}
+          body: |
+            📋 **See [CHANGELOG.md](https://github.com/joypad-ai/joypad-os/blob/main/CHANGELOG.md) for full release notes.**
+
+            ## Installation (RP2040)
+
+            1. Disconnect adapter from console and all USB devices
+            2. Hold BOOT button while connecting USB-C to computer
+               - For usb2gc: just connect USB-C (no BOOT button needed)
+            3. Drag & drop the `.uf2` file to the `RPI-RP2` drive
+            4. Drive will auto-eject when complete
+
+            ## Installation (ESP32-S3)
+
+            1. Double-tap reset to enter TinyUF2 mode (USB drive appears)
+            2. Drag & drop the `bt2usb_esp32s3.uf2` file to the drive
+            3. See [ESP32 docs](https://github.com/joypad-ai/joypad-os/blob/main/docs/platforms/esp32.md) for first-time TinyUF2 setup
+
+            ## Installation (nRF52840)
+
+            1. Double-tap reset to enter UF2 bootloader (USB drive appears)
+            2. Drag & drop the `.uf2` file to the drive (FTHR840BOOT, XIAO-SENSE, etc.)
+            3. See [nRF52840 docs](https://github.com/joypad-ai/joypad-os/blob/main/docs/platforms/nrf52840.md) for details
+          files: |
+            releases/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.JOYBOT_PAT }}
+
+      - name: Release Summary
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "### ✅ Release v${VERSION} Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`v${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Release contents:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -lh releases/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
